@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationIcon>Assets\icon.ico</ApplicationIcon>
+    <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
+    <AssemblyName>NetworkSentinel</AssemblyName>
+    <RootNamespace>NetworkSentinel</RootNamespace>
+    <Product>Network Sentinel</Product>
+    <Description>macOS-native network port monitor and intrusion awareness console</Description>
+    <Version>0.3.0</Version>
+    <RuntimeIdentifiers>osx-arm64;osx-x64</RuntimeIdentifiers>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.2.5" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.2.5" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.2.5" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.2.5" />
+    <PackageReference Include="Avalonia.Controls.DataGrid" Version="11.2.5" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <PackageReference Include="Spectre.Console" Version="0.49.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Data\allowlist-default.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <EmbeddedResource Include="Data\allowlist-default.json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="Themes\**" />
+    <AvaloniaResource Include="Assets\icon.png" />
+    <AvaloniaResource Include="Assets\icon.ico" />
+  </ItemGroup>
+
+</Project>
