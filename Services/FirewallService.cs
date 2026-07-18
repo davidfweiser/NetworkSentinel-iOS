@@ -442,63 +442,78 @@ public sealed class FirewallService
 
     /// <summary>
     /// Runs a shell script elevated via osascript (GUI password) or sudo.
+    /// Complex scripts are written to a temp file so AppleScript never has to
+    /// embed nested shell quotes (which caused -2740 syntax errors).
     /// </summary>
     private static FirewallOperationResult RunPrivilegedShell(string shellScript)
     {
         if (geteuid() == 0)
-            return RunDirect("/bin/bash", "-c " + ShellQuote(shellScript));
+            return RunProcess("/bin/bash", "-c", shellScript);
 
         // 1) sudo -n (cached / passwordless)
         if (CommandExists("sudo"))
         {
-            var cached = RunDirect("sudo", "-n /bin/bash -c " + ShellQuote(shellScript));
+            var cached = RunProcess("sudo", "-n", "/bin/bash", "-c", shellScript);
             if (cached.Success)
                 return cached;
         }
 
-        // 2) osascript admin dialog (standard macOS GUI elevation)
-        // Escape for AppleScript string inside double quotes.
-        var asScript = shellScript
-            .Replace("\\", "\\\\")
-            .Replace("\"", "\\\"")
-            .Replace("\r", "")
-            .Replace("\n", "; ");
-
-        var osa = RunDirect("osascript",
-            $"-e \"do shell script \\\"{asScript}\\\" with administrator privileges\"");
-        if (osa.Success)
-            return osa;
-
-        // 3) Interactive sudo when we have a TTY (TUI / Terminal)
-        if (CommandExists("sudo") && !Console.IsInputRedirected)
+        // 2) osascript admin dialog — run bash against a temp script file.
+        //    Inlining multi-line shell with nested quotes into `do shell script "..."`
+        //    breaks AppleScript ("A identifier can't go after this \"\"" / -2740).
+        string? tempPath = null;
+        try
         {
-            var interactive = RunDirect("sudo", "/bin/bash -c " + ShellQuote(shellScript));
-            if (interactive.Success)
-                return interactive;
-            return interactive;
-        }
+            tempPath = Path.Combine(
+                Path.GetTempPath(),
+                $"networksentinel-pf-{Environment.ProcessId}-{Guid.NewGuid():N}.sh");
+            var body = shellScript.Replace("\r\n", "\n").Replace('\r', '\n');
+            if (!body.EndsWith('\n'))
+                body += "\n";
+            File.WriteAllText(tempPath, body);
 
-        return FirewallOperationResult.Fail(
-            string.IsNullOrWhiteSpace(osa.Message)
-                ? "Need admin rights for firewall changes. Allow the password dialog, or run from Terminal with sudo."
-                : osa.Message);
+            // Single-quoted path is safe for bash; only AS-escape the outer command.
+            var shellCmd = $"/bin/bash {ShellQuote(tempPath)}";
+            var asLiteral = shellCmd
+                .Replace("\\", "\\\\")
+                .Replace("\"", "\\\"");
+
+            var osa = RunProcess(
+                "osascript",
+                "-e",
+                $"do shell script \"{asLiteral}\" with administrator privileges");
+            if (osa.Success)
+                return osa;
+
+            // 3) Interactive sudo when we have a TTY (TUI / Terminal)
+            if (CommandExists("sudo") && !Console.IsInputRedirected)
+                return RunProcess("sudo", "/bin/bash", "-c", shellScript);
+
+            return FirewallOperationResult.Fail(
+                string.IsNullOrWhiteSpace(osa.Message)
+                    ? "Need admin rights for firewall changes. Allow the password dialog, or run from Terminal with sudo."
+                    : osa.Message);
+        }
+        catch (Exception ex)
+        {
+            return FirewallOperationResult.Fail(ex.Message);
+        }
+        finally
+        {
+            if (tempPath != null)
+            {
+                try { File.Delete(tempPath); }
+                catch { /* ignore */ }
+            }
+        }
     }
 
     private static bool CommandExists(string name)
     {
         try
         {
-            var psi = new ProcessStartInfo("/usr/bin/which", name)
-            {
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-            using var p = Process.Start(psi);
-            if (p == null) return false;
-            p.WaitForExit(3000);
-            return p.ExitCode == 0;
+            var result = RunProcess("/usr/bin/which", name);
+            return result.Success;
         }
         catch
         {
@@ -506,24 +521,33 @@ public sealed class FirewallService
         }
     }
 
-    private static FirewallOperationResult RunDirect(string file, string args)
+    private static FirewallOperationResult RunProcess(string file, params string[] args)
     {
         try
         {
-            var psi = new ProcessStartInfo(file, args)
+            var psi = new ProcessStartInfo
             {
+                FileName = file,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 CreateNoWindow = true
             };
+            foreach (var arg in args)
+                psi.ArgumentList.Add(arg);
+
             using var p = Process.Start(psi);
             if (p == null)
                 return FirewallOperationResult.Fail($"Could not start {file}.");
 
             string stdout = p.StandardOutput.ReadToEnd();
             string stderr = p.StandardError.ReadToEnd();
-            p.WaitForExit(60000);
+            if (!p.WaitForExit(120_000))
+            {
+                try { p.Kill(entireProcessTree: true); } catch { /* ignore */ }
+                return FirewallOperationResult.Fail($"{file} timed out.");
+            }
+
             string combined = (stdout + "\n" + stderr).Trim();
 
             if (p.ExitCode == 0)
