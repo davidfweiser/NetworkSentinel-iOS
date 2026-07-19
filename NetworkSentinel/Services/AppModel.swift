@@ -475,20 +475,24 @@ final class AppModel {
 
     @discardableResult
     func runAction(
-        _ name: String,
+        _ action: String,
         ip: String? = nil,
         value: String? = nil,
-        kind: String? = nil
+        kind: String? = nil,
+        fieldName: String? = nil,
+        direction: String? = nil
     ) async -> Bool {
         guard let server else { return false }
         do {
             let resp = try await api.action(
                 baseURL: server.baseURL,
                 token: store.sessionToken(for: server.id),
-                name: name,
+                action: action,
                 ip: ip,
                 value: value,
-                kind: kind
+                kind: kind,
+                fieldName: fieldName,
+                direction: direction
             )
             statusBanner = resp.message
             if !resp.ok {
@@ -523,5 +527,42 @@ final class AppModel {
     func addAllowlist(_ value: String) async { _ = await runAction("add_allowlist", value: value) }
     func removeAllowlist(_ value: String, kind: String) async {
         _ = await runAction("remove_allowlist", value: value, kind: kind)
+    }
+
+    /// Web 0.3+: `set_setting` with name + true/false value.
+    func setSetting(_ key: String, enabled: Bool) async {
+        _ = await runAction("set_setting", value: enabled ? "true" : "false", fieldName: key)
+    }
+
+    func setBlockInbound(_ on: Bool) async { await setSetting("blockInbound", enabled: on) }
+    func setBlockOutbound(_ on: Bool) async { await setSetting("blockOutbound", enabled: on) }
+    func setGeoLookup(_ on: Bool) async { await setSetting("geoLookupEnabled", enabled: on) }
+    func setAllowlistRemoteFeed(_ on: Bool) async { await setSetting("allowlistUseRemoteFeed", enabled: on) }
+    func setAutoBlockEnabled(_ on: Bool) async { await setSetting("autoBlockEnabled", enabled: on) }
+
+    /// Web 0.3+: block a local port (TCP/UDP, direction).
+    func blockPort(_ port: Int, protocol proto: String = "TCP", direction: String = "Inbound") async {
+        _ = await runAction(
+            "block_port",
+            value: "\(port)",
+            kind: proto,
+            direction: direction
+        )
+    }
+
+    func unblockPort(_ port: Int, protocol proto: String = "TCP") async {
+        _ = await runAction("unblock_port", value: "\(port)", kind: proto)
+    }
+
+    func removeRule(named name: String) async {
+        _ = await runAction("remove_rule", value: name, fieldName: name)
+    }
+
+    func removeAllRules() async {
+        _ = await runAction("remove_all_rules")
+    }
+
+    func authorizeFirewall() async {
+        _ = await runAction("authorize")
     }
 }

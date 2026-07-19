@@ -16,14 +16,16 @@ Connect to one or more hosts running the headless web UI (`-w` / `--web`), sign 
 | **More** | Listening ports, firewall rules, allowlist add/remove/refresh |
 | **Secure storage** | Session tokens & optional remembered passwords in Keychain |
 
-Talks to the same JSON API as the browser console:
+Talks to the same JSON API as the browser console (Linux & Windows web **0.3.x**):
 
 - `GET /api/auth/status`
 - `POST /api/auth/login` · `/api/auth/setup` · `/api/auth/logout`
-- `GET /api/state`
-- `POST /api/action` (`block`, `unblock`, `toggle_monitor`, …)
+- `GET /api/state` (settings include `geoLookupEnabled` / `allowlistUseRemoteFeed`; rules include `isProtected`, `address`, `ports`)
+- `POST /api/action` — `block`, `unblock`, `set_setting`, `block_port`, `unblock_port`, `remove_rule`, `remove_all_rules`, allowlist, auto-block, …
 
 Sessions use the web UI’s `ns_session` cookie, sent as `Authorization: Bearer` from the app.
+
+Compatible with older web servers for core monitor/block; 0.3-only settings and actions appear when the server advertises them.
 
 ## Requirements
 

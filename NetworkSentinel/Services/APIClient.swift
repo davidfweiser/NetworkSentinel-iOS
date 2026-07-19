@@ -117,19 +117,25 @@ actor APIClient {
         return try decode(data)
     }
 
+    /// POST `/api/action` — matches Network Sentinel web 0.3+ `ActionRequest`
+    /// (`action`, `ip`, `value`, `name`, `kind`, `direction`).
     func action(
         baseURL: String,
         token: String?,
-        name: String,
+        action: String,
         ip: String? = nil,
         value: String? = nil,
-        kind: String? = nil
+        kind: String? = nil,
+        fieldName: String? = nil,
+        direction: String? = nil
     ) async throws -> ActionResponse {
         let url = try url(base: baseURL, path: "/api/action")
-        var body: [String: String] = ["action": name]
+        var body: [String: String] = ["action": action]
         if let ip, !ip.isEmpty { body["ip"] = ip }
         if let value, !value.isEmpty { body["value"] = value }
         if let kind, !kind.isEmpty { body["kind"] = kind }
+        if let fieldName, !fieldName.isEmpty { body["name"] = fieldName }
+        if let direction, !direction.isEmpty { body["direction"] = direction }
 
         var req = request(url: url, method: "POST", token: token)
         req.httpBody = try encoder.encode(body)
@@ -139,6 +145,12 @@ actor APIClient {
         if let http = response as? HTTPURLResponse, http.statusCode == 401 {
             let msg = (try? decoder.decode(AuthResponse.self, from: data))?.message
             throw APIError.unauthorized(msg)
+        }
+        // Web returns HTTP 400 with `{ ok: false, message }` for failed actions
+        // (unknown action, missing elevation, protected rule, …). Treat as a normal body.
+        if let http = response as? HTTPURLResponse, http.statusCode == 400,
+           let failed = try? decoder.decode(ActionResponse.self, from: data) {
+            return failed
         }
         try throwIfNeeded(response: response, data: data)
         return try decode(data)

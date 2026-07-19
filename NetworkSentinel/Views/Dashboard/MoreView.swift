@@ -6,6 +6,9 @@ struct MoreView: View {
     @State private var showEditServer = false
     @State private var allowlistValue = ""
     @State private var showAddAllowlist = false
+    @State private var showBlockPort = false
+    @State private var blockPortText = ""
+    @State private var confirmRemoveAll = false
 
     var body: some View {
         NavigationStack {
@@ -75,7 +78,7 @@ struct MoreView: View {
                     Text("Foreground: polls every few seconds. Background: continues briefly after you leave, then iOS wakes the app periodically (Background App Refresh). Turn on Background App Refresh in Settings → Network Sentinel. Use “Remember password” so background login works.")
                 }
 
-                Section("Ports") {
+                Section {
                     if let ports = model.state?.ports, !ports.isEmpty {
                         ForEach(ports.uniquedRows()) { row in
                             let p = row.value
@@ -93,14 +96,52 @@ struct MoreView: View {
                                         .foregroundStyle(NSTheme.muted)
                                         .lineLimit(1)
                                 }
+                                Spacer(minLength: 8)
+                                Button("Block") {
+                                    Task {
+                                        await model.blockPort(
+                                            p.port,
+                                            protocol: p.protocolName.uppercased(),
+                                            direction: "Inbound"
+                                        )
+                                    }
+                                }
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(NSTheme.danger)
                             }
                             .listRowBackground(NSTheme.card)
+                            .swipeActions {
+                                Button {
+                                    Task {
+                                        await model.blockPort(
+                                            p.port,
+                                            protocol: p.protocolName.uppercased(),
+                                            direction: "Inbound"
+                                        )
+                                    }
+                                } label: {
+                                    Label("Block port", systemImage: "hand.raised.fill")
+                                }
+                                .tint(NSTheme.danger)
+                            }
                         }
                     } else {
                         Text("No listeners")
                             .foregroundStyle(NSTheme.muted)
                             .listRowBackground(NSTheme.card)
                     }
+
+                    Button {
+                        blockPortText = ""
+                        showBlockPort = true
+                    } label: {
+                        Label("Block port…", systemImage: "plus.circle")
+                    }
+                    .listRowBackground(NSTheme.card)
+                } header: {
+                    Text("Ports")
+                } footer: {
+                    Text("Block port uses the web 0.3+ API. Do not block the console’s own listen port.")
                 }
 
                 Section {
@@ -109,17 +150,37 @@ struct MoreView: View {
                             let r = row.value
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack {
-                                    Text(r.target)
+                                    Text(r.displayAddress)
                                         .font(.subheadline.monospaced().weight(.semibold))
                                         .foregroundStyle(NSTheme.text)
+                                        .lineLimit(1)
                                     Spacer()
+                                    if r.isProtectedRule {
+                                        Text("PROTECTED")
+                                            .font(.system(size: 9, weight: .bold))
+                                            .foregroundStyle(NSTheme.warning)
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(NSTheme.warning.opacity(0.15), in: Capsule())
+                                    }
                                     Text(r.action ?? "block")
                                         .font(.caption2.weight(.bold))
                                         .foregroundStyle(NSTheme.danger)
                                 }
-                                Text([r.direction, r.kind, r.protocolName].compactMap { $0 }.joined(separator: " · "))
-                                    .font(.caption)
-                                    .foregroundStyle(NSTheme.muted)
+                                if r.target != r.displayAddress {
+                                    Text(r.target)
+                                        .font(.caption2.monospaced())
+                                        .foregroundStyle(NSTheme.muted)
+                                        .lineLimit(1)
+                                }
+                                Text(
+                                    [r.direction, r.kind, r.protocolName, r.ports]
+                                        .compactMap { $0 }
+                                        .filter { !$0.isEmpty }
+                                        .joined(separator: " · ")
+                                )
+                                .font(.caption)
+                                .foregroundStyle(NSTheme.muted)
                                 if let d = r.description, !d.isEmpty {
                                     Text(d)
                                         .font(.caption2)
@@ -128,13 +189,23 @@ struct MoreView: View {
                                 }
                             }
                             .listRowBackground(NSTheme.card)
-                            .swipeActions {
-                                Button {
-                                    Task { await model.unblock(ip: r.target) }
-                                } label: {
-                                    Label("Unblock", systemImage: "lock.open")
+                            .swipeActions(edge: .trailing, allowsFullSwipe: !r.isProtectedRule) {
+                                if !r.isProtectedRule {
+                                    Button(role: .destructive) {
+                                        Task { await model.removeRule(named: r.name) }
+                                    } label: {
+                                        Label("Remove", systemImage: "trash")
+                                    }
+                                    // IP-style unblock when address looks like an IP
+                                    if looksLikeIP(r.displayAddress) {
+                                        Button {
+                                            Task { await model.unblock(ip: r.displayAddress) }
+                                        } label: {
+                                            Label("Unblock", systemImage: "lock.open")
+                                        }
+                                        .tint(NSTheme.success)
+                                    }
                                 }
-                                .tint(NSTheme.success)
                             }
                         }
                     } else {
@@ -142,6 +213,20 @@ struct MoreView: View {
                             .foregroundStyle(NSTheme.muted)
                             .listRowBackground(NSTheme.card)
                     }
+
+                    Button {
+                        Task { await model.authorizeFirewall() }
+                    } label: {
+                        Label("Authorize firewall", systemImage: "lock.open")
+                    }
+                    .listRowBackground(NSTheme.card)
+
+                    Button(role: .destructive) {
+                        confirmRemoveAll = true
+                    } label: {
+                        Label("Remove all managed rules", systemImage: "trash")
+                    }
+                    .listRowBackground(NSTheme.card)
                 } header: {
                     Text("Firewall rules")
                 } footer: {
@@ -259,7 +344,49 @@ struct MoreView: View {
             } message: {
                 Text("Trusted domains/IPs are never auto-blocked.")
             }
+            .alert("Block port", isPresented: $showBlockPort) {
+                TextField("Port number", text: $blockPortText)
+                    .keyboardType(.numberPad)
+                Button("Block TCP inbound") {
+                    submitBlockPort(proto: "TCP", direction: "Inbound")
+                }
+                Button("Block UDP inbound") {
+                    submitBlockPort(proto: "UDP", direction: "Inbound")
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Enter a port 1–65535. Do not block the web console port.")
+            }
+            .confirmationDialog(
+                "Remove all Network Sentinel firewall rules?",
+                isPresented: $confirmRemoveAll,
+                titleVisibility: .visible
+            ) {
+                Button("Remove all", role: .destructive) {
+                    Task { await model.removeAllRules() }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Deletes managed IP/port rules. The web console’s protected allow rule is left alone when possible.")
+            }
             .refreshable { await model.refresh(silent: false) }
         }
+    }
+
+    private func submitBlockPort(proto: String, direction: String) {
+        let trimmed = blockPortText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let port = Int(trimmed), (1...65535).contains(port) else {
+            model.lastError = "Enter a valid port (1–65535)."
+            return
+        }
+        Task { await model.blockPort(port, protocol: proto, direction: direction) }
+    }
+
+    private func looksLikeIP(_ s: String) -> Bool {
+        // Simple check — enough to enable Unblock swipe for IP rules.
+        let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        if t.contains(":") { return t.contains(".") == false } // rough IPv6
+        let parts = t.split(separator: ".")
+        return parts.count == 4 && parts.allSatisfy { Int($0) != nil }
     }
 }

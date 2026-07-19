@@ -204,8 +204,55 @@ struct DashboardView: View {
                     await model.clearThreats()
                 }
             }
+
+            // Web 0.3+ exposes geo / allowlist feed (and set_setting for all of these).
+            // Gate the whole panel so older servers don't get unknown-action errors.
+            if settings?.geoLookupEnabled != nil || settings?.allowlistUseRemoteFeed != nil {
+                VStack(spacing: 0) {
+                    settingToggle(
+                        title: "Block inbound",
+                        isOn: settings?.blockInbound ?? true
+                    ) { await model.setBlockInbound($0) }
+                    Divider().overlay(NSTheme.border)
+                    settingToggle(
+                        title: "Block outbound",
+                        isOn: settings?.blockOutbound ?? false
+                    ) { await model.setBlockOutbound($0) }
+                    if settings?.geoLookupEnabled != nil {
+                        Divider().overlay(NSTheme.border)
+                        settingToggle(
+                            title: "Geo lookups",
+                            isOn: settings?.geoLookupEnabled ?? true
+                        ) { await model.setGeoLookup($0) }
+                    }
+                    if settings?.allowlistUseRemoteFeed != nil {
+                        Divider().overlay(NSTheme.border)
+                        settingToggle(
+                            title: "Allowlist remote feed",
+                            isOn: settings?.allowlistUseRemoteFeed ?? true
+                        ) { await model.setAllowlistRemoteFeed($0) }
+                    }
+                }
+                .padding(.horizontal, 4)
+                .padding(.vertical, 2)
+                .background(NSTheme.cardElevated, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
         }
         .nsCard()
+    }
+
+    private func settingToggle(title: String, isOn: Bool, action: @escaping (Bool) async -> Void) -> some View {
+        Toggle(isOn: Binding(
+            get: { isOn },
+            set: { newValue in Task { await action(newValue) } }
+        )) {
+            Text(title)
+                .font(.subheadline)
+                .foregroundStyle(NSTheme.text)
+        }
+        .tint(NSTheme.accent)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
     }
 
     private func controlButton(title: String, icon: String, tint: Color = NSTheme.accent, action: @escaping () async -> Void) -> some View {

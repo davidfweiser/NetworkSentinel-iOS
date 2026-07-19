@@ -83,6 +83,10 @@ struct SettingsInfo: Codable {
     let autoBlockMinLevel: String?
     let blockInbound: Bool?
     let blockOutbound: Bool?
+    /// Present on Network Sentinel web ≥ 0.3.0
+    let geoLookupEnabled: Bool?
+    /// Present on Network Sentinel web ≥ 0.3.0
+    let allowlistUseRemoteFeed: Bool?
     let isMonitoring: Bool?
 }
 
@@ -193,20 +197,43 @@ struct PortInfo: Codable, Identifiable {
 
 struct FirewallRuleInfo: Codable, Identifiable {
     var id: String {
-        [name, kind ?? "", target, direction ?? "", protocolName ?? "", action ?? "", description ?? ""]
-            .joined(separator: "|")
+        [
+            name,
+            kind ?? "",
+            address ?? "",
+            target,
+            ports ?? "",
+            direction ?? "",
+            protocolName ?? "",
+            action ?? "",
+            description ?? "",
+            "\(isProtected ?? false)"
+        ].joined(separator: "|")
     }
     let name: String
+    /// Web console's own allow rule for its listen port — must not be removed from the client.
+    let isProtected: Bool?
     let kind: String?
+    /// Explicit address field (0.3+); falls back to target when absent.
+    let address: String?
     let target: String
+    let ports: String?
     let direction: String?
     let protocolName: String?
     let enabled: Bool?
     let action: String?
     let description: String?
 
+    /// Best display target for block/unblock of IPs.
+    var displayAddress: String {
+        if let address, !address.isEmpty { return address }
+        return target
+    }
+
+    var isProtectedRule: Bool { isProtected == true }
+
     enum CodingKeys: String, CodingKey {
-        case name, kind, target, direction
+        case name, isProtected, kind, address, target, ports, direction
         case protocolName = "protocol"
         case enabled, action, description
     }
