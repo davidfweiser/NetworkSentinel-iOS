@@ -1,0 +1,423 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0C8A3577C99E5A2B5D695815 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB594FE9C08F6FEA200A0FDA /* RootView.swift */; };
+		19E6907F6427C5C3AC57A70F /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2FFB791D1583B17EE570607 /* Theme.swift */; };
+		38D188CF1B276138BB3CC10E /* AuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B8AF44484F464EAD93296DD /* AuthView.swift */; };
+		432310299222C289433DC265 /* ThreatsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4532945338DDCF9B2A15610A /* ThreatsView.swift */; };
+		499C268941C90A4EED1C689B /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBA5D1340BDB96309E3FF80D /* AppModel.swift */; };
+		599A5D8A1FA03C86017D2E96 /* ConnectionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF3437A8A628A01763AABAA8 /* ConnectionsView.swift */; };
+		78E58F9A8CDCB1F85BAC5B35 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B676AA60D502FB7A12C8AA2 /* OnboardingView.swift */; };
+		7E4C3E5FE6439119D85ED3F7 /* NetworkSentinelApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F580F2DAB752302A83956B6 /* NetworkSentinelApp.swift */; };
+		8D6E9D9B1A16B3EF3F5A20BD /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6891AC5E17F1771098E55F03 /* Models.swift */; };
+		A757C7EF1289D44279A075C2 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59C15DFCA866379A7FFCEFE5 /* DashboardView.swift */; };
+		B2EFB650A17035F086427BF2 /* HostsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0C41C43A94E5FC1124AC0D7 /* HostsView.swift */; };
+		C6A4771FCAC18DF995E192B5 /* ServersListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AE7012AC9352A900E8DE772 /* ServersListView.swift */; };
+		D90DC36EA940C19F2CC5BCCB /* MoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8030D8B55F5057DCDA4EA02 /* MoreView.swift */; };
+		DFA8DAB9EDF25AB6463FA977 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9423F2F59A1F9BE8C016659C /* KeychainStore.swift */; };
+		E8231F73F0E2F60E3654F833 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 938724AC8BCE8D274BEA33F4 /* APIClient.swift */; };
+		E86441C60E3EAC9699D57181 /* ServerStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 814350F5C5BE3F494DA1BFD7 /* ServerStore.swift */; };
+		F09ACF28E5EB6C6ED8B122A1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 6EC7700CB2573BB4983BB1D8 /* Assets.xcassets */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		014224BED0A02422C9D2B0DF /* NetworkSentinel.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NetworkSentinel.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1F580F2DAB752302A83956B6 /* NetworkSentinelApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkSentinelApp.swift; sourceTree = "<group>"; };
+		3AE7012AC9352A900E8DE772 /* ServersListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServersListView.swift; sourceTree = "<group>"; };
+		3B676AA60D502FB7A12C8AA2 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		4532945338DDCF9B2A15610A /* ThreatsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreatsView.swift; sourceTree = "<group>"; };
+		59C15DFCA866379A7FFCEFE5 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		5B8AF44484F464EAD93296DD /* AuthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthView.swift; sourceTree = "<group>"; };
+		6891AC5E17F1771098E55F03 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		6EC7700CB2573BB4983BB1D8 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		72A8AE9B93EB68653B7DB760 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		814350F5C5BE3F494DA1BFD7 /* ServerStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerStore.swift; sourceTree = "<group>"; };
+		938724AC8BCE8D274BEA33F4 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
+		9423F2F59A1F9BE8C016659C /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
+		A0C41C43A94E5FC1124AC0D7 /* HostsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostsView.swift; sourceTree = "<group>"; };
+		BBA5D1340BDB96309E3FF80D /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		CB594FE9C08F6FEA200A0FDA /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		D2FFB791D1583B17EE570607 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		E8030D8B55F5057DCDA4EA02 /* MoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoreView.swift; sourceTree = "<group>"; };
+		EF3437A8A628A01763AABAA8 /* ConnectionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionsView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		296289E07949E08F5B482941 /* NetworkSentinel */ = {
+			isa = PBXGroup;
+			children = (
+				690ACB485846BFCE3B9C9FEB /* Models */,
+				761293CF7AE0DCD08D462437 /* Services */,
+				D17461CBC6A3A02379DD80D5 /* Views */,
+				6EC7700CB2573BB4983BB1D8 /* Assets.xcassets */,
+				72A8AE9B93EB68653B7DB760 /* Info.plist */,
+				1F580F2DAB752302A83956B6 /* NetworkSentinelApp.swift */,
+				D2FFB791D1583B17EE570607 /* Theme.swift */,
+			);
+			path = NetworkSentinel;
+			sourceTree = "<group>";
+		};
+		690ACB485846BFCE3B9C9FEB /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				6891AC5E17F1771098E55F03 /* Models.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		7487B6261FD131927E3662C7 = {
+			isa = PBXGroup;
+			children = (
+				296289E07949E08F5B482941 /* NetworkSentinel */,
+				F91D31540BB8C39BBA392298 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		761293CF7AE0DCD08D462437 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				938724AC8BCE8D274BEA33F4 /* APIClient.swift */,
+				BBA5D1340BDB96309E3FF80D /* AppModel.swift */,
+				9423F2F59A1F9BE8C016659C /* KeychainStore.swift */,
+				814350F5C5BE3F494DA1BFD7 /* ServerStore.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		D17461CBC6A3A02379DD80D5 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				F13D2286BF4BEE18323924EB /* Dashboard */,
+				E75F5037FC655354398EFEF4 /* Servers */,
+				CB594FE9C08F6FEA200A0FDA /* RootView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		E75F5037FC655354398EFEF4 /* Servers */ = {
+			isa = PBXGroup;
+			children = (
+				5B8AF44484F464EAD93296DD /* AuthView.swift */,
+				3B676AA60D502FB7A12C8AA2 /* OnboardingView.swift */,
+				3AE7012AC9352A900E8DE772 /* ServersListView.swift */,
+			);
+			path = Servers;
+			sourceTree = "<group>";
+		};
+		F13D2286BF4BEE18323924EB /* Dashboard */ = {
+			isa = PBXGroup;
+			children = (
+				EF3437A8A628A01763AABAA8 /* ConnectionsView.swift */,
+				59C15DFCA866379A7FFCEFE5 /* DashboardView.swift */,
+				A0C41C43A94E5FC1124AC0D7 /* HostsView.swift */,
+				E8030D8B55F5057DCDA4EA02 /* MoreView.swift */,
+				4532945338DDCF9B2A15610A /* ThreatsView.swift */,
+			);
+			path = Dashboard;
+			sourceTree = "<group>";
+		};
+		F91D31540BB8C39BBA392298 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				014224BED0A02422C9D2B0DF /* NetworkSentinel.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		17858BC7CB8C9C61259205B9 /* NetworkSentinel */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 08381ABDDB7FB739AEEF25F2 /* Build configuration list for PBXNativeTarget "NetworkSentinel" */;
+			buildPhases = (
+				C8348D8E044C12A23C784D48 /* Sources */,
+				71ECA179F8D85CC8F1A924D7 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = NetworkSentinel;
+			packageProductDependencies = (
+			);
+			productName = NetworkSentinel;
+			productReference = 014224BED0A02422C9D2B0DF /* NetworkSentinel.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		CA3C8DD5D35E2461D35C2D7F /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1500;
+			};
+			buildConfigurationList = DC9C563397F7292E26B81B15 /* Build configuration list for PBXProject "NetworkSentinel" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 7487B6261FD131927E3662C7;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = F91D31540BB8C39BBA392298 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				17858BC7CB8C9C61259205B9 /* NetworkSentinel */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		71ECA179F8D85CC8F1A924D7 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F09ACF28E5EB6C6ED8B122A1 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		C8348D8E044C12A23C784D48 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E8231F73F0E2F60E3654F833 /* APIClient.swift in Sources */,
+				499C268941C90A4EED1C689B /* AppModel.swift in Sources */,
+				38D188CF1B276138BB3CC10E /* AuthView.swift in Sources */,
+				599A5D8A1FA03C86017D2E96 /* ConnectionsView.swift in Sources */,
+				A757C7EF1289D44279A075C2 /* DashboardView.swift in Sources */,
+				B2EFB650A17035F086427BF2 /* HostsView.swift in Sources */,
+				DFA8DAB9EDF25AB6463FA977 /* KeychainStore.swift in Sources */,
+				8D6E9D9B1A16B3EF3F5A20BD /* Models.swift in Sources */,
+				D90DC36EA940C19F2CC5BCCB /* MoreView.swift in Sources */,
+				7E4C3E5FE6439119D85ED3F7 /* NetworkSentinelApp.swift in Sources */,
+				78E58F9A8CDCB1F85BAC5B35 /* OnboardingView.swift in Sources */,
+				0C8A3577C99E5A2B5D695815 /* RootView.swift in Sources */,
+				E86441C60E3EAC9699D57181 /* ServerStore.swift in Sources */,
+				C6A4771FCAC18DF995E192B5 /* ServersListView.swift in Sources */,
+				19E6907F6427C5C3AC57A70F /* Theme.swift in Sources */,
+				432310299222C289433DC265 /* ThreatsView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		B6B715CAFDF7277314D61E37 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		B9BA0CC16FD71D59BDAC668E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = R27KU7BQMW;
+				INFOPLIST_FILE = NetworkSentinel/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Network Sentinel";
+				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads = YES;
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Network Sentinel connects to your Network Sentinel web servers on the local network.";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.davidfweiser.NetworkSentinel;
+				PRODUCT_NAME = NetworkSentinel;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		D1A82B33C63D378C2E04733D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = "";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		ED4325A2F9AEECD595508CB1 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = R27KU7BQMW;
+				INFOPLIST_FILE = NetworkSentinel/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Network Sentinel";
+				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads = YES;
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Network Sentinel connects to your Network Sentinel web servers on the local network.";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.davidfweiser.NetworkSentinel;
+				PRODUCT_NAME = NetworkSentinel;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		08381ABDDB7FB739AEEF25F2 /* Build configuration list for PBXNativeTarget "NetworkSentinel" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B9BA0CC16FD71D59BDAC668E /* Debug */,
+				ED4325A2F9AEECD595508CB1 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		DC9C563397F7292E26B81B15 /* Build configuration list for PBXProject "NetworkSentinel" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B6B715CAFDF7277314D61E37 /* Debug */,
+				D1A82B33C63D378C2E04733D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = CA3C8DD5D35E2461D35C2D7F /* Project object */;
+}

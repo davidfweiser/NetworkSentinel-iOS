@@ -1,0 +1,23 @@
+# Xcode
+DerivedData/
+build/
+*.xcuserstate
+*.xccheckout
+xcuserdata/
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# XcodeGen (keep project.yml; regenerate xcodeproj if preferred)
+# NetworkSentinel.xcodeproj/
+
+# macOS
+.DS_Store
+*.swp
+*~
+
+# SwiftPM
+.build/
+.swiftpm/
