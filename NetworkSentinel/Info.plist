@@ -27,9 +27,14 @@
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Network Sentinel connects to your Network Sentinel web servers on the local network.</string>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.davidfweiser.NetworkSentinel.refresh</string>
+	</array>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>
+		<string>processing</string>
 	</array>
 	<key>UILaunchScreen</key>
 	<dict/>

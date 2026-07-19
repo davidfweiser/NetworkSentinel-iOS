@@ -1,6 +1,8 @@
+import BackgroundTasks
 import Foundation
 import Observation
 import SwiftUI
+import UIKit
 
 /// High-level UI gate for master-password auth.
 enum AuthPhase: Equatable {
@@ -37,6 +39,19 @@ final class AppModel {
     var pollInterval: TimeInterval = 2.5
     /// When true, try Keychain password once after status check.
     var allowAutoLogin = true
+    /// In-app critical alert (popup) awaiting user acknowledgment.
+    var pendingCriticalAlert: CriticalAlertPayload?
+    /// User preference: local notifications + in-app popups for Critical threats.
+    var criticalAlertsEnabled: Bool {
+        get { UserDefaults.standard.object(forKey: "networksentinel.criticalAlerts") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "networksentinel.criticalAlerts") }
+    }
+    /// True when app is in foreground (for choosing popup vs notification emphasis).
+    var isAppActive = true
+    /// Extended background execution after leaving the app (minutes, not continuous).
+    private var uiBackgroundTask: UIBackgroundTaskIdentifier = .invalid
+    /// Last time a system background poll finished (for UI).
+    var lastBackgroundPollAt: Date?
 
     var server: ServerProfile? { store.selectedServer }
 
@@ -45,10 +60,120 @@ final class AppModel {
     func onAppear() {
         evaluateInitialAuthGate()
         startPolling()
+        BackgroundRefresh.schedule()
+        Task {
+            await CriticalAlertService.shared.requestPermission()
+        }
     }
 
     func onDisappear() {
-        stopPolling()
+        // Do not stop polling here — sheets can trigger disappear.
+        // Scene phase controls background behavior.
+    }
+
+    /// Foreground / background transitions from SwiftUI scenePhase.
+    func handleScenePhase(_ phase: ScenePhase) {
+        switch phase {
+        case .active:
+            isAppActive = true
+            endUIBackgroundTask()
+            if pollTask == nil { startPolling() }
+            BackgroundRefresh.schedule()
+            Task { await CriticalAlertService.shared.requestPermission() }
+        case .inactive:
+            isAppActive = false
+        case .background:
+            isAppActive = false
+            beginUIBackgroundTask()
+            BackgroundRefresh.schedule(earliest: 15 * 60)
+            // Keep a few more poll cycles while iOS still allows background time.
+            if pollTask == nil { startPolling() }
+        @unknown default:
+            break
+        }
+    }
+
+    private func beginUIBackgroundTask() {
+        endUIBackgroundTask()
+        uiBackgroundTask = UIApplication.shared.beginBackgroundTask(withName: "NetworkSentinelPoll") { [weak self] in
+            Task { @MainActor in
+                self?.stopPolling()
+                self?.endUIBackgroundTask()
+            }
+        }
+    }
+
+    private func endUIBackgroundTask() {
+        guard uiBackgroundTask != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(uiBackgroundTask)
+        uiBackgroundTask = .invalid
+    }
+
+    // MARK: - Background poll (all servers → Critical notifications)
+
+    /// Called by BGAppRefreshTask. Polls every saved server that has a session or remembered password.
+    func handleBackgroundRefresh(_ task: BGAppRefreshTask) async {
+        BackgroundRefresh.schedule(earliest: 15 * 60)
+
+        let work = Task { @MainActor in
+            await self.pollAllServersForAlerts()
+        }
+        task.expirationHandler = {
+            work.cancel()
+        }
+        _ = await work.result
+        lastBackgroundPollAt = .now
+        task.setTaskCompleted(success: !work.isCancelled)
+    }
+
+    /// Poll all configured servers for Critical threats (notifications only).
+    func pollAllServersForAlerts() async {
+        guard criticalAlertsEnabled else { return }
+        await CriticalAlertService.shared.requestPermission()
+
+        for server in store.servers {
+            if Task.isCancelled { break }
+            await pollServerForAlerts(server)
+        }
+    }
+
+    private func pollServerForAlerts(_ server: ServerProfile) async {
+        do {
+            guard let token = try await ensureSessionToken(for: server) else { return }
+            let s = try await api.fetchState(baseURL: server.baseURL, token: token)
+
+            // Update live UI only for the selected server.
+            if store.selectedServerId == server.id || store.selectedServer?.id == server.id {
+                if isAppActive {
+                    applyState(s, server: server)
+                } else {
+                    state = s
+                    processCriticalThreats(from: s, server: server)
+                }
+            } else {
+                processCriticalThreats(from: s, server: server)
+            }
+        } catch {
+            // Best-effort background poll; ignore per-server failures.
+        }
+    }
+
+    /// Returns a valid session token, logging in with remembered password if needed.
+    private func ensureSessionToken(for server: ServerProfile) async throws -> String? {
+        if let token = store.sessionToken(for: server.id) {
+            return token
+        }
+        guard let password = store.rememberedPassword(for: server.id) else {
+            return nil
+        }
+        let (resp, token) = try await api.login(baseURL: server.baseURL, password: password)
+        guard resp.ok else { return nil }
+        if let token {
+            store.setSessionToken(token, for: server.id)
+            return token
+        }
+        // Cookie-only session; try status without stored token.
+        return store.sessionToken(for: server.id)
     }
 
     /// Immediately require master password unless we already have a stored session token
@@ -62,12 +187,14 @@ final class AppModel {
         state = nil
         lastError = nil
         isAuthenticated = false
+        pendingCriticalAlert = nil
         guard let server else {
             authPhase = .checking
             needsAuth = false
             needsSetup = false
             return
         }
+        CriticalAlertService.shared.resetPrime(for: server.id)
         if store.sessionToken(for: server.id) != nil {
             authPhase = .checking
             needsAuth = false
@@ -88,9 +215,49 @@ final class AppModel {
         isAuthenticated = false
         needsAuth = false
         needsSetup = false
+        pendingCriticalAlert = nil
         allowAutoLogin = true
         evaluateInitialAuthGate()
         restartPolling()
+    }
+
+    func dismissCriticalAlert() {
+        pendingCriticalAlert = nil
+    }
+
+    /// Apply server state and fire critical alerts for new Critical threats.
+    func applyState(_ s: ServerState, server: ServerProfile) {
+        state = s
+        isAuthenticated = true
+        needsAuth = false
+        needsSetup = false
+        authPhase = .authenticated
+        lastError = nil
+        store.markConnected(server.id)
+        processCriticalThreats(from: s, server: server)
+    }
+
+    private func processCriticalThreats(from s: ServerState, server: ServerProfile) {
+        guard criticalAlertsEnabled else { return }
+        let threats = s.threats ?? []
+        let fresh = CriticalAlertService.shared.newCriticalThreats(
+            serverId: server.id,
+            threats: threats
+        )
+        guard !fresh.isEmpty else { return }
+
+        // Always post a system notification (banner when backgrounded / locked).
+        CriticalAlertService.shared.notify(serverName: server.name, threats: fresh)
+
+        // In-app popup while using the app (queue first new critical).
+        if isAppActive {
+            let t = fresh[0]
+            pendingCriticalAlert = CriticalAlertPayload(
+                serverName: server.name,
+                threat: t,
+                extraCount: max(0, fresh.count - 1)
+            )
+        }
     }
 
     // MARK: - Polling
@@ -151,13 +318,7 @@ final class AppModel {
 
             // Prefer stored Bearer token; otherwise cookie jar from this process's login.
             let s = try await api.fetchState(baseURL: server.baseURL, token: token)
-            state = s
-            isAuthenticated = true
-            needsAuth = false
-            needsSetup = false
-            authPhase = .authenticated
-            lastError = nil
-            store.markConnected(server.id)
+            applyState(s, server: server)
         } catch APIError.unauthorized(let msg) {
             store.setSessionToken(nil, for: server.id)
             isAuthenticated = false
@@ -201,10 +362,7 @@ final class AppModel {
                 lastError = nil
                 do {
                     let s = try await api.fetchState(baseURL: server.baseURL, token: token)
-                    state = s
-                    isAuthenticated = true
-                    authPhase = .authenticated
-                    store.markConnected(server.id)
+                    applyState(s, server: server)
                 } catch APIError.unauthorized {
                     store.setSessionToken(nil, for: server.id)
                     isAuthenticated = false
@@ -275,14 +433,8 @@ final class AppModel {
             baseURL: server.baseURL,
             token: store.sessionToken(for: server.id) ?? token
         )
-        state = s
-        isAuthenticated = true
-        needsAuth = false
-        needsSetup = false
-        authPhase = .authenticated
-        lastError = nil
         allowAutoLogin = true
-        store.markConnected(server.id)
+        applyState(s, server: server)
     }
 
     func performSetup(password: String, confirm: String) async throws {
@@ -301,13 +453,7 @@ final class AppModel {
             baseURL: server.baseURL,
             token: store.sessionToken(for: server.id) ?? token
         )
-        state = s
-        isAuthenticated = true
-        needsAuth = false
-        needsSetup = false
-        authPhase = .authenticated
-        lastError = nil
-        store.markConnected(server.id)
+        applyState(s, server: server)
     }
 
     func logout() async {

@@ -45,9 +45,40 @@ struct MoreView: View {
                     .listRowBackground(NSTheme.card)
                 }
 
+                Section {
+                    Toggle(isOn: Binding(
+                        get: { model.criticalAlertsEnabled },
+                        set: { model.criticalAlertsEnabled = $0 }
+                    )) {
+                        Label("Critical alerts", systemImage: "bell.badge.fill")
+                    }
+                    .listRowBackground(NSTheme.card)
+                    .tint(NSTheme.danger)
+
+                    Button {
+                        Task { await CriticalAlertService.shared.requestPermission() }
+                    } label: {
+                        Label("Notification permission", systemImage: "bell")
+                    }
+                    .listRowBackground(NSTheme.card)
+
+                    if let at = model.lastBackgroundPollAt {
+                        LabeledContent("Last background poll") {
+                            Text(at, style: .relative)
+                                .foregroundStyle(NSTheme.muted)
+                        }
+                        .listRowBackground(NSTheme.card)
+                    }
+                } header: {
+                    Text("Alerts")
+                } footer: {
+                    Text("Foreground: polls every few seconds. Background: continues briefly after you leave, then iOS wakes the app periodically (Background App Refresh). Turn on Background App Refresh in Settings → Network Sentinel. Use “Remember password” so background login works.")
+                }
+
                 Section("Ports") {
                     if let ports = model.state?.ports, !ports.isEmpty {
-                        ForEach(ports) { p in
+                        ForEach(ports.uniquedRows()) { row in
+                            let p = row.value
                             HStack {
                                 Text(p.protocolName.uppercased())
                                     .font(.caption2.weight(.bold))
@@ -74,7 +105,8 @@ struct MoreView: View {
 
                 Section {
                     if let rules = model.state?.firewallRules, !rules.isEmpty {
-                        ForEach(rules) { r in
+                        ForEach(rules.uniquedRows()) { row in
+                            let r = row.value
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack {
                                     Text(r.target)
@@ -120,7 +152,8 @@ struct MoreView: View {
 
                 Section {
                     if let entries = model.state?.allowlist, !entries.isEmpty {
-                        ForEach(entries) { e in
+                        ForEach(entries.uniquedRows()) { row in
+                            let e = row.value
                             HStack {
                                 Text(e.kind)
                                     .font(.caption2.weight(.bold))

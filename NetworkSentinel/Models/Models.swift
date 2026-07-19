@@ -97,7 +97,18 @@ struct StatsInfo: Codable {
 }
 
 struct ConnectionInfo: Codable, Identifiable {
-    var id: String { "\(protocolName)-\(local)-\(remote)-\(pid ?? 0)" }
+    /// Prefer stable fields; disambiguate duplicates via index in `uniqued(by:)`.
+    var id: String {
+        [
+            protocolName,
+            local,
+            remote,
+            state ?? "",
+            process ?? "",
+            "\(pid ?? 0)",
+            lastSeen ?? ""
+        ].joined(separator: "|")
+    }
     let protocolName: String
     let local: String
     let remote: String
@@ -132,7 +143,17 @@ struct HostInfo: Codable, Identifiable {
 }
 
 struct ThreatInfo: Codable, Identifiable {
-    var id: String { "\(time)-\(sourceIp)-\(title)-\(level)" }
+    var id: String {
+        [
+            time,
+            sourceIp,
+            title,
+            level,
+            type ?? "",
+            detail ?? "",
+            method ?? ""
+        ].joined(separator: "|")
+    }
     let time: String
     let level: String
     let levelNum: Int?
@@ -145,7 +166,18 @@ struct ThreatInfo: Codable, Identifiable {
 }
 
 struct PortInfo: Codable, Identifiable {
-    var id: String { "\(protocolName)-\(port)-\(pid ?? 0)" }
+    /// Include endpoint + process so multiple listeners on the same port don't collide
+    /// (e.g. two TCP:22 rows with missing pid both became "TCP-22-0").
+    var id: String {
+        [
+            protocolName,
+            "\(port)",
+            endpoint ?? "",
+            process ?? "",
+            "\(pid ?? 0)",
+            hint ?? ""
+        ].joined(separator: "|")
+    }
     let protocolName: String
     let endpoint: String?
     let port: Int
@@ -160,7 +192,10 @@ struct PortInfo: Codable, Identifiable {
 }
 
 struct FirewallRuleInfo: Codable, Identifiable {
-    var id: String { "\(name)-\(target)-\(direction)" }
+    var id: String {
+        [name, kind ?? "", target, direction ?? "", protocolName ?? "", action ?? "", description ?? ""]
+            .joined(separator: "|")
+    }
     let name: String
     let kind: String?
     let target: String
@@ -178,18 +213,41 @@ struct FirewallRuleInfo: Codable, Identifiable {
 }
 
 struct AllowlistEntry: Codable, Identifiable {
-    var id: String { "\(kind)-\(value)" }
+    var id: String { "\(kind)|\(value)|\(detail ?? "")" }
     let kind: String
     let value: String
     let detail: String?
 }
 
 struct ActivityPoint: Codable, Identifiable {
-    var id: String { time }
+    var id: String { "\(time)|\(connections ?? 0)|\(threats ?? 0)|\(hosts ?? 0)" }
     let time: String
     let connections: Int?
     let threats: Int?
     let hosts: Int?
+}
+
+// MARK: - Unique list IDs
+
+/// Wraps a value with a guaranteed-unique `id` for SwiftUI `ForEach` when the API
+/// returns duplicate rows (same port, same connection key, etc.).
+struct UniqueRow<T>: Identifiable {
+    let id: String
+    let value: T
+}
+
+extension Array where Element: Identifiable, Element.ID == String {
+    /// Appends `#2`, `#3`, … when base ids repeat so ForEach never sees collisions.
+    func uniquedRows() -> [UniqueRow<Element>] {
+        var seen: [String: Int] = [:]
+        return map { element in
+            let base = element.id
+            let n = seen[base, default: 0]
+            seen[base] = n + 1
+            let unique = n == 0 ? base : "\(base)#\(n)"
+            return UniqueRow(id: unique, value: element)
+        }
+    }
 }
 
 struct ActionResponse: Codable {
@@ -198,6 +256,17 @@ struct ActionResponse: Codable {
 }
 
 // MARK: - Threat helpers
+
+struct CriticalAlertPayload: Identifiable, Equatable {
+    let id = UUID()
+    let serverName: String
+    let threat: ThreatInfo
+    let extraCount: Int
+
+    static func == (lhs: CriticalAlertPayload, rhs: CriticalAlertPayload) -> Bool {
+        lhs.id == rhs.id
+    }
+}
 
 enum ThreatSeverity: Int, Comparable {
     case none = 0

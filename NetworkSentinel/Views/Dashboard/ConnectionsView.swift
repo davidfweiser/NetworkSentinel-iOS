@@ -31,7 +31,8 @@ struct ConnectionsView: View {
                     )
                 } else {
                     List {
-                        ForEach(connections) { c in
+                        ForEach(connections.uniquedRows()) { row in
+                            let c = row.value
                             ConnectionRow(connection: c) {
                                 if let ip = c.remoteAddress, !ip.isEmpty {
                                     Task { await model.block(ip: ip) }

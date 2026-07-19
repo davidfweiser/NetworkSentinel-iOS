@@ -30,6 +30,33 @@ struct RootView: View {
         .animation(.easeInOut(duration: 0.25), value: model.store.servers.count)
         .animation(.easeInOut(duration: 0.2), value: model.authPhase)
         .animation(.easeInOut(duration: 0.2), value: model.isAuthenticated)
+        .alert(
+            "Critical threat",
+            isPresented: Binding(
+                get: { model.pendingCriticalAlert != nil },
+                set: { if !$0 { model.dismissCriticalAlert() } }
+            )
+        ) {
+            if let alert = model.pendingCriticalAlert {
+                Button("Block \(alert.threat.sourceIp)", role: .destructive) {
+                    let ip = alert.threat.sourceIp
+                    model.dismissCriticalAlert()
+                    Task { await model.block(ip: ip) }
+                }
+                Button("Dismiss", role: .cancel) {
+                    model.dismissCriticalAlert()
+                }
+            } else {
+                Button("OK", role: .cancel) {
+                    model.dismissCriticalAlert()
+                }
+            }
+        } message: {
+            if let alert = model.pendingCriticalAlert {
+                let extra = alert.extraCount > 0 ? "\n(+\(alert.extraCount) more)" : ""
+                Text("\(alert.serverName)\n\(alert.threat.title)\n\(alert.threat.sourceIp)\(extra)")
+            }
+        }
     }
 }
 

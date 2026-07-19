@@ -48,3 +48,6 @@ targets:
           NSAllowsArbitraryLoads: true
         UIBackgroundModes:
           - fetch
+          - processing
+        BGTaskSchedulerPermittedIdentifiers:
+          - com.davidfweiser.NetworkSentinel.refresh

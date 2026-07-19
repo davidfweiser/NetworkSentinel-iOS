@@ -46,7 +46,8 @@ struct ThreatsView: View {
                     )
                 } else {
                     List {
-                        ForEach(threats) { t in
+                        ForEach(threats.uniquedRows()) { row in
+                            let t = row.value
                             ThreatRow(threat: t) {
                                 Task { await model.block(ip: t.sourceIp) }
                             }

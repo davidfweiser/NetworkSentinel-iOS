@@ -244,13 +244,14 @@ struct DashboardView: View {
                     .foregroundStyle(NSTheme.muted)
             }
 
-            let items = Array((model.state?.threats ?? []).prefix(5))
+            let items = Array((model.state?.threats ?? []).prefix(5)).uniquedRows()
             if items.isEmpty {
                 Text("No threats right now.")
                     .font(.subheadline)
                     .foregroundStyle(NSTheme.muted)
             } else {
-                ForEach(items) { t in
+                ForEach(items) { row in
+                    let t = row.value
                     HStack(alignment: .top, spacing: 10) {
                         SeverityBadge(level: t.level, levelNum: t.levelNum)
                         VStack(alignment: .leading, spacing: 2) {
@@ -265,7 +266,7 @@ struct DashboardView: View {
                         Spacer(minLength: 0)
                     }
                     .padding(.vertical, 4)
-                    if t.id != items.last?.id {
+                    if row.id != items.last?.id {
                         Divider().overlay(NSTheme.border)
                     }
                 }
@@ -280,13 +281,14 @@ struct DashboardView: View {
                 .font(.headline)
                 .foregroundStyle(NSTheme.text)
 
-            let ports = Array((model.state?.ports ?? []).prefix(6))
+            let ports = Array((model.state?.ports ?? []).prefix(6)).uniquedRows()
             if ports.isEmpty {
                 Text("No open listeners reported.")
                     .font(.subheadline)
                     .foregroundStyle(NSTheme.muted)
             } else {
-                ForEach(ports) { p in
+                ForEach(ports) { row in
+                    let p = row.value
                     HStack {
                         Text("\(p.protocolName.uppercased())")
                             .font(.caption2.weight(.bold))
