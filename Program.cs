@@ -1,8 +1,10 @@
 using System;
+using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using Avalonia;
 using NetworkSentinel.Tui;
+using NetworkSentinel.Web;
 
 namespace NetworkSentinel;
 
@@ -11,12 +13,36 @@ internal static class Program
     [DllImport("libc")]
     private static extern uint geteuid();
 
+    [DllImport("libc", SetLastError = true)]
+    private static extern int chown(string pathname, uint owner, uint group);
+
     [STAThread]
     public static void Main(string[] args)
     {
+        // Any fatal error must leave evidence: <data dir>/logs/crash.log
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+            LogCrash("unhandled", e.ExceptionObject as Exception);
+        System.Threading.Tasks.TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            LogCrash("unobserved-task", e.Exception);
+            e.SetObserved();
+        };
+
         if (WantsHelp(args))
         {
             PrintUsage();
+            return;
+        }
+
+        if (WantsSetMasterPassword(args))
+        {
+            RunSetMasterPassword();
+            return;
+        }
+
+        if (WantsWeb(args, out var webPort))
+        {
+            RunWeb(webPort);
             return;
         }
 
@@ -83,8 +109,275 @@ internal static class Program
         }
     }
 
+    private static void RunWeb(int? port)
+    {
+        try
+        {
+            using var app = new WebApp(port);
+            app.RunAsync().GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            LogCrash("web-host", ex);
+            Console.Error.WriteLine("Network Sentinel web UI failed:");
+            Console.Error.WriteLine(ex.Message);
+            if (ex.InnerException != null)
+                Console.Error.WriteLine(ex.InnerException.Message);
+            Environment.Exit(1);
+        }
+    }
+
+    private static bool WantsSetMasterPassword(string[] args)
+        => args.Any(a => a is "--set-master-password" or "--reset-master-password");
+
+    private static void RunSetMasterPassword()
+    {
+        if (!IsRunningAsRoot())
+        {
+            Console.Error.WriteLine("--set-master-password requires root — re-run with sudo:");
+            Console.Error.WriteLine("  sudo NetworkSentinel --set-master-password");
+            Environment.Exit(1);
+            return;
+        }
+
+        try
+        {
+            var target = ResolveMasterPasswordTarget();
+            var dataDir = Path.Combine(target.Home, "Library", "Application Support", "NetworkSentinel");
+            Directory.CreateDirectory(dataDir);
+            if (target.NeedsChown)
+                TryChown(dataDir, target.Uid, target.Gid);
+
+            var store = new WebAuthStore(dataDir);
+            Console.WriteLine(store.IsConfigured
+                ? "A master password is already set for this user — this will overwrite it."
+                : "No master password is set yet for this user — creating one.");
+            Console.WriteLine($"Data directory: {dataDir}");
+            Console.WriteLine();
+
+            var password = ReadPassword("New master password (min 8 characters): ");
+            var confirm = ReadPassword("Confirm master password: ");
+
+            if (!store.SetPassword(password, confirm, out var message))
+            {
+                Console.Error.WriteLine($"Failed: {message}");
+                Environment.Exit(1);
+                return;
+            }
+
+            if (target.NeedsChown)
+                TryChown(Path.Combine(dataDir, "web-master.json"), target.Uid, target.Gid);
+
+            Console.WriteLine(message);
+            Console.WriteLine();
+            Console.WriteLine("If the web console is currently running, restart it to pick up the change:");
+            Console.WriteLine("  NetworkSentinel --web");
+        }
+        catch (Exception ex)
+        {
+            LogCrash("set-master-password", ex);
+            Console.Error.WriteLine("Failed to set master password:");
+            Console.Error.WriteLine(ex.Message);
+            Environment.Exit(1);
+        }
+    }
+
+    /// <summary>
+    /// The web console reads the master-password hash from the *user's* Application
+    /// Support directory, so `sudo NetworkSentinel --set-master-password` has to
+    /// target SUDO_USER's home — not root's — or the file lands somewhere the
+    /// running console never reads.
+    /// </summary>
+    private static (string Home, uint Uid, uint Gid, bool NeedsChown) ResolveMasterPasswordTarget()
+    {
+        var sudoUser = Environment.GetEnvironmentVariable("SUDO_USER");
+        if (!string.IsNullOrWhiteSpace(sudoUser) && sudoUser != "root")
+        {
+            // macOS has no getent; the directory service is the source of truth.
+            var home = RunCapture("/usr/bin/dscl", ".", "-read", $"/Users/{sudoUser}", "NFSHomeDirectory");
+            var uidText = RunCapture("/usr/bin/id", "-u", sudoUser);
+            var gidText = RunCapture("/usr/bin/id", "-g", sudoUser);
+
+            // "NFSHomeDirectory: /Users/david"
+            if (!string.IsNullOrWhiteSpace(home))
+            {
+                var idx = home.IndexOf(':');
+                if (idx >= 0)
+                    home = home[(idx + 1)..].Trim();
+            }
+
+            if (!string.IsNullOrWhiteSpace(home) && Directory.Exists(home) &&
+                uint.TryParse(uidText?.Trim(), out var uid) &&
+                uint.TryParse(gidText?.Trim(), out var gid))
+            {
+                return (home, uid, gid, true);
+            }
+
+            Console.Error.WriteLine($"Warning: could not resolve home directory for SUDO_USER '{sudoUser}' — falling back to root's own home.");
+        }
+
+        var rootHome = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (string.IsNullOrWhiteSpace(rootHome))
+            rootHome = "/var/root";
+        return (rootHome, 0, 0, false);
+    }
+
+    private static string? RunCapture(string file, params string[] args)
+    {
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = file,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false
+            };
+            foreach (var a in args)
+                psi.ArgumentList.Add(a);
+
+            using var proc = System.Diagnostics.Process.Start(psi);
+            if (proc == null)
+                return null;
+
+            var output = proc.StandardOutput.ReadToEnd();
+            proc.WaitForExit(5000);
+            return proc.ExitCode == 0 ? output.Trim() : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static void TryChown(string path, uint uid, uint gid)
+    {
+        try
+        {
+            chown(path, uid, gid);
+        }
+        catch
+        {
+            // best-effort — worst case the target user needs a manual chown
+        }
+    }
+
+    /// <summary>Reads a line with each character masked as '*'; falls back to plain ReadLine when input is redirected (e.g. piped/non-interactive).</summary>
+    private static string ReadPassword(string prompt)
+    {
+        Console.Write(prompt);
+
+        if (Console.IsInputRedirected)
+            return Console.ReadLine() ?? "";
+
+        var buffer = new System.Text.StringBuilder();
+        while (true)
+        {
+            var key = Console.ReadKey(intercept: true);
+            if (key.Key == ConsoleKey.Enter)
+            {
+                Console.WriteLine();
+                return buffer.ToString();
+            }
+
+            if (key.Key == ConsoleKey.Backspace)
+            {
+                if (buffer.Length > 0)
+                {
+                    buffer.Length--;
+                    Console.Write("\b \b");
+                }
+                continue;
+            }
+
+            if (!char.IsControl(key.KeyChar))
+            {
+                buffer.Append(key.KeyChar);
+                Console.Write('*');
+            }
+        }
+    }
+
+    private static void LogCrash(string kind, Exception? ex)
+    {
+        try
+        {
+            var dir = Path.Combine(Services.AppPaths.DataDirectory, "logs");
+            Directory.CreateDirectory(dir);
+            File.AppendAllText(
+                Path.Combine(dir, "crash.log"),
+                $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {kind}:{Environment.NewLine}{ex}{Environment.NewLine}{Environment.NewLine}");
+        }
+        catch
+        {
+            // never let crash logging crash
+        }
+    }
+
     private static bool WantsHelp(string[] args)
         => args.Any(a => a is "-h" or "--help" or "-?" or "help");
+
+    /// <summary>
+    /// Headless browser UI when: -w / --web, optional port as -w PORT, -w=PORT, --web=PORT, or --port PORT.
+    /// </summary>
+    private static bool WantsWeb(string[] args, out int? port)
+    {
+        port = null;
+        for (var i = 0; i < args.Length; i++)
+        {
+            var a = args[i];
+
+            if (a is "-w" or "--web" or "web")
+            {
+                if (i + 1 < args.Length && int.TryParse(args[i + 1], out var p) && p is >= 1 and <= 65535)
+                    port = p;
+                return true;
+            }
+
+            if (a.StartsWith("-w=", StringComparison.Ordinal) ||
+                a.StartsWith("--web=", StringComparison.Ordinal))
+            {
+                var value = a[(a.IndexOf('=') + 1)..];
+                if (int.TryParse(value, out var p) && p is >= 1 and <= 65535)
+                    port = p;
+                else
+                {
+                    Console.Error.WriteLine($"Invalid web port in '{a}'. Use e.g. -w=18765");
+                    Environment.Exit(2);
+                }
+                return true;
+            }
+
+            // -w18765 (no space / equals)
+            if (a.Length > 2 && a.StartsWith("-w", StringComparison.Ordinal) &&
+                int.TryParse(a.AsSpan(2), out var glued) && glued is >= 1 and <= 65535)
+            {
+                port = glued;
+                return true;
+            }
+        }
+
+        // --port only counts when web mode is also requested elsewhere — ignore alone.
+        // NETWORKSENTINEL_WEB=1 forces web mode.
+        var env = Environment.GetEnvironmentVariable("NETWORKSENTINEL_WEB");
+        if (string.Equals(env, "1", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(env, "true", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(env, "yes", StringComparison.OrdinalIgnoreCase))
+        {
+            for (var i = 0; i < args.Length; i++)
+            {
+                if ((args[i] is "--port" or "-p") && i + 1 < args.Length &&
+                    int.TryParse(args[i + 1], out var p) && p is >= 1 and <= 65535)
+                {
+                    port = p;
+                    break;
+                }
+            }
+            return true;
+        }
+
+        return false;
+    }
 
     /// <summary>
     /// TUI when: --tui / -t / tui arg, NETWORKSENTINEL_TUI=1, or no graphical session
@@ -127,10 +420,17 @@ internal static class Program
               (default)          Avalonia GUI
               --tui, -t, tui     Terminal UI (Spectre.Console)
               --console          Same as --tui
+              -w, --web [PORT]   Headless web UI (browser). Auto-picks a free high port
+                                 if PORT is omitted (prefers 18765, then nearby alternatives)
+              --set-master-password    Set/reset the web UI master password from the
+                                        terminal (no browser needed). Requires root:
+                                        sudo NetworkSentinel --set-master-password
+                                        Restart the web console afterwards.
               -h, --help         Show this help
 
             Environment:
               NETWORKSENTINEL_TUI=1              Force TUI
+              NETWORKSENTINEL_WEB=1              Force headless web UI
               NETWORKSENTINEL_GUI=1              Force GUI
               NETWORKSENTINEL_ALLOW_ROOT_GUI=1   Suppress root-GUI warning
 
@@ -141,7 +441,10 @@ internal static class Program
             Examples:
               dotnet run -c Release
               dotnet run -c Release -- --tui
+              dotnet run -c Release -- -w
               ./NetworkSentinel --tui
+              ./NetworkSentinel -w
+              ./NetworkSentinel -w 18765
             """);
     }
 

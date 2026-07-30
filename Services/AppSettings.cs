@@ -16,11 +16,33 @@ public sealed class AppSettings
     public bool AutoBlockInbound { get; set; } = true;
     public bool AutoBlockOutbound { get; set; } = true;
 
-    /// <summary>Geo lookups use the free ip-api.com endpoint over plain HTTP; set false to disable.</summary>
+    /// <summary>Geo lookups use a free web endpoint (HTTPS preferred); set false to disable.</summary>
     public bool GeoLookupEnabled { get; set; } = true;
+
+    /// <summary>Watch the macOS unified log for failed-logon bursts; set false to disable.</summary>
+    public bool AuthLogMonitorEnabled { get; set; } = true;
+
+    /// <summary>
+    /// Detect scans of CLOSED ports via a PF log rule + pflog0 watch.
+    /// Off by default because installing the rule and reading pflog0 both need
+    /// admin rights (Mac password dialog).
+    /// </summary>
+    public bool ProbeLogEnabled { get; set; }
 
     /// <summary>Refresh the allowlist from this repo's GitHub feed; set false to use only local/built-in lists.</summary>
     public bool AllowlistUseRemoteFeed { get; set; } = true;
+
+    /// <summary>
+    /// Milliseconds between monitor polls (clamped to 500–10000 when applied).
+    /// Doubles as the activity-chart sample rate.
+    /// </summary>
+    public int MonitorPollMs { get; set; } = NetworkMonitorService.DefaultPollIntervalMs;
+
+    /// <summary>
+    /// IPs the user manually unblocked/removed. Auto-block will not recreate rules for these
+    /// until the UTC expiry (or the user blocks the IP again). Shared across GUI / TUI / web.
+    /// </summary>
+    public Dictionary<string, DateTime> AutoBlockSuppressedUntil { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
     public ThreatLevel GetMinLevel()
     {
@@ -43,7 +65,9 @@ public sealed class AppSettings
                 return new AppSettings();
 
             var json = File.ReadAllText(path);
-            return JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings();
+            var settings = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings();
+            settings.AutoBlockSuppressedUntil ??= new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+            return settings;
         }
         catch
         {

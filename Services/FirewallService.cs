@@ -18,6 +18,36 @@ public sealed class FirewallService
 {
     public const string RulePrefix = "NetworkSentinel";
     public const string PfAnchorName = "com.networksentinel";
+    public const string ProbeLogRuleName = "NetworkSentinel-ProbeLog";
+
+    /// <summary>
+    /// Decoded PF log lines land here. pflog0 itself is only readable by root
+    /// (BPF), so the privileged writer started by <see cref="EnableProbeLogging"/>
+    /// decodes it to this world-readable text file and
+    /// <see cref="ProbeLogMonitor"/> tails that as the normal user.
+    /// </summary>
+    public const string ProbeLogPath = "/var/log/networksentinel-probe.log";
+
+    /// <summary>
+    /// The decoder runs as a LaunchDaemon, not a backgrounded child. A `nohup … &amp;`
+    /// started inside `do shell script … with administrator privileges` does not
+    /// survive: osascript reaps the process group when the elevated shell exits, so
+    /// the decoder died instantly and closed-port detection silently logged nothing.
+    /// launchd is the only mechanism that keeps a root process alive here — and it
+    /// restarts it (KeepAlive) and restores it after a reboot for free.
+    /// </summary>
+    private const string ProbeDaemonLabel = "com.networksentinel.probelog";
+
+    private const string ProbeDaemonPlist = "/Library/LaunchDaemons/com.networksentinel.probelog.plist";
+    private const string ProbeWriterPath = "/usr/local/libexec/networksentinel-probe-writer.sh";
+
+    /// <summary>
+    /// Cap on packets per tcpdump invocation. The writer loop restarts tcpdump
+    /// afterwards, which truncates the log — that is what bounds the file size.
+    /// ProbeLogMonitor detects the truncation and reseeks.
+    /// </summary>
+    private const int ProbePacketCap = 200_000;
+
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
     public AllowlistService? Allowlist { get; set; }
@@ -152,26 +182,110 @@ public sealed class FirewallService
 
     public FirewallOperationResult RemoveRule(string ruleName)
     {
-        if (string.IsNullOrWhiteSpace(ruleName) || !ruleName.StartsWith(RulePrefix, StringComparison.OrdinalIgnoreCase))
-            return FirewallOperationResult.Fail("Only Network Sentinel managed rules can be removed here.");
+        try
+        {
+            if (string.IsNullOrWhiteSpace(ruleName) || !ruleName.StartsWith(RulePrefix, StringComparison.OrdinalIgnoreCase))
+                return FirewallOperationResult.Fail("Only Network Sentinel managed rules can be removed here.");
 
-        if (!IsAdministrator)
-            return FirewallOperationResult.Fail("No way to elevate to modify the host firewall.");
+            if (!IsAdministrator)
+                return FirewallOperationResult.Fail("No way to elevate to modify the host firewall.");
 
-        return RemoveRuleByName(ruleName);
+            var name = ruleName.Trim();
+
+            // Blocks are created as an -In/-Out pair. Removing only the clicked row left
+            // the sibling active, so the IP stayed blocked and remove "didn't work".
+            var siblings = new List<string> { name };
+            if (name.EndsWith("-In", StringComparison.OrdinalIgnoreCase))
+                siblings.Add(name[..^"-In".Length] + "-Out");
+            else if (name.EndsWith("-Out", StringComparison.OrdinalIgnoreCase))
+                siblings.Add(name[..^"-Out".Length] + "-In");
+
+            // Drop both from the ledger first, then reload PF once — one password
+            // prompt for the pair instead of one per sibling.
+            var ledger = LoadLedger();
+            var removed = siblings
+                .Where(s => ledger.Any(r => string.Equals(r.Name, s, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+
+            if (removed.Count == 0)
+                return FirewallOperationResult.Fail($"No rule named “{name}”.");
+
+            ledger.RemoveAll(r => removed.Contains(r.Name, StringComparer.OrdinalIgnoreCase));
+            SaveLedger(ledger);
+
+            var applied = ApplyPfFromLedger();
+            if (!applied.Success)
+                return FirewallOperationResult.Fail(applied.Message);
+
+            return FirewallOperationResult.Ok(removed.Count > 1
+                ? $"Removed inbound + outbound rules ({removed[0]} and its pair)."
+                : $"Removed “{removed[0]}”.");
+        }
+        catch (Exception ex)
+        {
+            // Never let firewall backend failures tear down the web host process.
+            return FirewallOperationResult.Fail($"Remove failed: {ex.Message}");
+        }
     }
 
-    public FirewallOperationResult RemoveAllManagedRules()
+    /// <param name="skip">Rules to leave in place (kept for API parity with the Windows/Linux builds).</param>
+    public FirewallOperationResult RemoveAllManagedRules(Func<FirewallRuleInfo, bool>? skip = null)
     {
         if (!IsAdministrator)
             return FirewallOperationResult.Fail("No way to elevate to modify the host firewall.");
 
-        SaveLedger(new List<FirewallRuleInfo>());
-        var applied = ApplyPfFromLedger();
+        var rules = LoadLedger();
+        var kept = skip == null
+            ? new List<FirewallRuleInfo>()
+            : rules.Where(skip).ToList();
+        var removed = rules.Count - kept.Count;
+
+        // Wiping the ledger also drops the probe-log rule from the anchor, so the
+        // privileged decoder would otherwise keep running with nothing logging to it.
+        var droppedProbeRule =
+            rules.Any(r => string.Equals(r.Name, ProbeLogRuleName, StringComparison.OrdinalIgnoreCase)) &&
+            !kept.Any(r => string.Equals(r.Name, ProbeLogRuleName, StringComparison.OrdinalIgnoreCase));
+
+        SaveLedger(kept);
+
+        var script = BuildApplyPfScript(out var buildError);
+        if (script == null)
+            return FirewallOperationResult.Fail(buildError);
+        if (droppedProbeRule)
+            script += "\n" + ProbeWriterStopScript();
+
+        var applied = RunPrivilegedShell(script);
         if (!applied.Success)
             return applied;
 
-        return FirewallOperationResult.Ok("Removed all Network Sentinel firewall rule(s).");
+        var msg = $"Removed {removed} Network Sentinel firewall rule(s).";
+        if (kept.Count > 0)
+            msg += $" Kept {kept.Count}.";
+        return FirewallOperationResult.Ok(msg);
+    }
+
+    /// <summary>
+    /// Best-effort IP from a managed rule name or remote field (for auto-block suppress after Remove).
+    /// </summary>
+    public static bool TryExtractIpFromManagedRule(string? ruleName, string? remoteAddresses, out string ip)
+    {
+        ip = "";
+        if (!string.IsNullOrWhiteSpace(remoteAddresses) &&
+            TryNormalizeIp(remoteAddresses.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault(), out ip, out _))
+            return true;
+
+        if (string.IsNullOrWhiteSpace(ruleName))
+            return false;
+
+        // NetworkSentinel-IP-1.2.3.4-In  or  NetworkSentinel-IP-2001_db8__1-Out
+        var m = Regex.Match(ruleName.Trim(),
+            @"^NetworkSentinel-IP-(.+)-(In|Out)$",
+            RegexOptions.IgnoreCase);
+        if (!m.Success)
+            return false;
+
+        var raw = m.Groups[1].Value.Replace('_', ':');
+        return TryNormalizeIp(raw, out ip, out _);
     }
 
     public FirewallOperationResult UnblockAllowlistedAddresses()
@@ -342,10 +456,26 @@ public sealed class FirewallService
     /// </summary>
     private FirewallOperationResult ApplyPfFromLedger()
     {
-        var hook = EnsureAnchorHooked();
-        if (!hook.Success)
-            return hook;
+        var script = BuildApplyPfScript(out var error);
+        if (script == null)
+            return FirewallOperationResult.Fail(error);
 
+        return RunPrivilegedShell(script);
+    }
+
+    /// <summary>
+    /// Writes the anchor file from the ledger and returns ONE privileged script that
+    /// hooks the anchor into pf.conf, enables PF, and loads the rules. Callers that
+    /// need extra privileged work (see <see cref="EnableProbeLogging"/>) append to
+    /// this script rather than making a second elevated call: every RunPrivilegedShell
+    /// is its own osascript process and therefore its own password dialog, so an
+    /// operation split across calls asked for the password repeatedly and answering
+    /// only the first prompt looked exactly like authentication failing.
+    /// Returns null and sets <paramref name="error"/> if the rules file cannot be written.
+    /// </summary>
+    private string? BuildApplyPfScript(out string error)
+    {
+        error = "";
         var rulesPath = UserPfRulesPath;
         try
         {
@@ -353,19 +483,16 @@ public sealed class FirewallService
         }
         catch (Exception ex)
         {
-            return FirewallOperationResult.Fail($"Could not write PF rules file: {ex.Message}");
+            error = $"Could not write PF rules file: {ex.Message}";
+            return null;
         }
 
-        // Copy into system path and load anchor. Enable PF if needed.
         var systemRules = $"/etc/pf.anchors/{PfAnchorName}";
-        var script =
-            $"mkdir -p /etc/pf.anchors && " +
-            $"cp {ShellQuote(rulesPath)} {ShellQuote(systemRules)} && " +
-            $"chmod 644 {ShellQuote(systemRules)} && " +
-            $"/sbin/pfctl -e 2>/dev/null; " +
-            $"/sbin/pfctl -a {ShellQuote(PfAnchorName)} -f {ShellQuote(systemRules)}";
-
-        return RunPrivilegedShell(script);
+        return AnchorHookScript() + "\n" +
+               $"cp {ShellQuote(rulesPath)} {ShellQuote(systemRules)}\n" +
+               $"chmod 644 {ShellQuote(systemRules)}\n" +
+               $"/sbin/pfctl -e 2>/dev/null || true\n" +
+               $"/sbin/pfctl -a {ShellQuote(PfAnchorName)} -f {ShellQuote(systemRules)}\n";
     }
 
     private static string BuildPfRuleset(IEnumerable<FirewallRuleInfo> rules)
@@ -403,20 +530,214 @@ public sealed class FirewallService
             sb.AppendLine();
         }
 
+        // Probe-log rule, deliberately LAST and deliberately not `quick`.
+        //
+        // macOS pfctl has no `match` keyword (it is a syntax error here), so the
+        // only way to log without a verdict does not exist — the rule has to be a
+        // pass. Two things keep that safe: every managed block above is
+        // `block drop ... quick`, so a blocked peer short-circuits and never reaches
+        // this rule; and `no state` means the pass applies to the SYN alone and
+        // creates no state entry, so every other packet of the connection is
+        // evaluated exactly as it was before. The net behaviour change is confined
+        // to inbound TCP SYNs that nothing else in the ruleset blocked.
+        if (rules.Any(r => r.Enabled && string.Equals(r.Name, ProbeLogRuleName, StringComparison.OrdinalIgnoreCase)))
+        {
+            sb.AppendLine($"# {ProbeLogRuleName}");
+            sb.AppendLine("pass in log proto tcp from any to any flags S/SA no state");
+            sb.AppendLine();
+        }
+
         return sb.ToString();
+    }
+
+    // ── Closed-port scan detection (PF log) ──────────────────────────────
+
+    /// <summary>
+    /// Installs the PF SYN-log rule and starts the privileged decoder that turns
+    /// pflog0 packets into <see cref="ProbeLogPath"/>. Probes to CLOSED ports are
+    /// answered with a RST before they ever appear in the socket table, so
+    /// connection polling cannot see them — this rule makes them visible.
+    ///
+    /// Rule load and decoder start happen in ONE elevated shell, so the user sees
+    /// a single password dialog.
+    /// </summary>
+    public FirewallOperationResult EnableProbeLogging()
+    {
+        if (!IsAdministrator)
+            return FirewallOperationResult.Fail("No way to elevate to modify the host firewall.");
+
+        UpsertLedger(new FirewallRuleInfo
+        {
+            Name = ProbeLogRuleName,
+            Description = "Logs inbound TCP SYNs via PF so scans of closed ports are detectable",
+            Enabled = true,
+            IsBlock = false,
+            Direction = FirewallDirection.Inbound,
+            RemoteAddresses = "",
+            LocalPorts = "",
+            Protocol = "TCP",
+            Kind = FirewallRuleKind.Other
+        });
+
+        var script = BuildApplyPfScript(out var error);
+        if (script == null)
+        {
+            RemoveFromLedger(ProbeLogRuleName);
+            return FirewallOperationResult.Fail(error);
+        }
+
+        var result = RunPrivilegedShell(script + "\n" + ProbeWriterStartScript());
+        if (!result.Success)
+        {
+            // Do not leave the ledger claiming a detection that is not running.
+            RemoveFromLedger(ProbeLogRuleName);
+            return FirewallOperationResult.Fail($"Failed to enable probe logging: {result.Message}");
+        }
+
+        return FirewallOperationResult.Ok("Probe logging enabled (PF log rule + pflog0 decoder).");
+    }
+
+    public FirewallOperationResult DisableProbeLogging()
+    {
+        if (!IsAdministrator)
+            return FirewallOperationResult.Fail("No way to elevate to modify the host firewall.");
+
+        RemoveFromLedger(ProbeLogRuleName);
+
+        var script = BuildApplyPfScript(out var error);
+        if (script == null)
+            return FirewallOperationResult.Fail(error);
+
+        var result = RunPrivilegedShell(script + "\n" + ProbeWriterStopScript());
+        return result.Success
+            ? FirewallOperationResult.Ok("Probe logging disabled.")
+            : result;
+    }
+
+    public bool IsProbeLoggingInstalled()
+        => GetManagedRules().Any(r => string.Equals(r.Name, ProbeLogRuleName, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Privileged fragment that creates pflog0 and installs + loads the decoder
+    /// LaunchDaemon. tcpdump exits after <see cref="ProbePacketCap"/> packets and the
+    /// wrapper loop restarts it against a truncated file, which is what bounds the log
+    /// size — ProbeLogMonitor treats the shrink as "reseek", not an error.
+    /// </summary>
+    private static string ProbeWriterStartScript()
+    {
+        // Both the loop and the plist go into files via QUOTED heredocs so their
+        // bodies pass through verbatim — nesting a multi-line loop or XML inside
+        // `sh -c '...'` inside AppleScript is exactly what breaks the elevation call.
+        //
+        // No BPF filter on the tcpdump, on purpose. The PF rule already logs nothing
+        // but inbound bare SYNs, so a `tcp[tcpflags]` filter would be redundant — and
+        // it compiles to an AF_INET-only test against DLT_PFLOG, which would silently
+        // drop every IPv6 probe. ProbeLogMonitor re-checks "Flags [S]" when it parses,
+        // which covers both families.
+        return $"""
+            {ProbeWriterStopScript()}
+            /sbin/ifconfig pflog0 create 2>/dev/null || true
+            /sbin/ifconfig pflog0 up 2>/dev/null || true
+            : > {ProbeLogPath}
+            chmod 644 {ProbeLogPath}
+            mkdir -p /usr/local/libexec
+            cat > {ProbeWriterPath} <<'NSPROBEEOF'
+            #!/bin/sh
+            while :; do
+              /usr/sbin/tcpdump -n -e -l -i pflog0 -c {ProbePacketCap} > {ProbeLogPath} 2>/dev/null
+              sleep 1
+            done
+            NSPROBEEOF
+            chown root:wheel {ProbeWriterPath}
+            chmod 755 {ProbeWriterPath}
+            cat > {ProbeDaemonPlist} <<'NSPLISTEOF'
+            <?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+            <plist version="1.0">
+            <dict>
+            	<key>Label</key>
+            	<string>{ProbeDaemonLabel}</string>
+            	<key>ProgramArguments</key>
+            	<array>
+            		<string>{ProbeWriterPath}</string>
+            	</array>
+            	<key>RunAtLoad</key>
+            	<true/>
+            	<key>KeepAlive</key>
+            	<true/>
+            	<key>ProcessType</key>
+            	<string>Background</string>
+            </dict>
+            </plist>
+            NSPLISTEOF
+            chown root:wheel {ProbeDaemonPlist}
+            chmod 644 {ProbeDaemonPlist}
+            # bootstrap is the modern API; fall back to load -w on older systems.
+            launchctl bootstrap system {ProbeDaemonPlist} 2>/dev/null || launchctl load -w {ProbeDaemonPlist} 2>/dev/null || true
+            """;
+    }
+
+    /// <summary>Privileged fragment that unloads the decoder daemon and removes its files.</summary>
+    private static string ProbeWriterStopScript()
+    {
+        return $"""
+            launchctl bootout system/{ProbeDaemonLabel} 2>/dev/null || launchctl unload -w {ProbeDaemonPlist} 2>/dev/null || true
+            rm -f {ProbeDaemonPlist}
+            pkill -f 'tcpdump -n -e -l -i pflog0' 2>/dev/null || true
+            rm -f {ProbeWriterPath}
+            """;
+    }
+
+    /// <summary>
+    /// True when the privileged decoder daemon is actually loaded. The PF rule and the
+    /// log file can both be present while the decoder is dead, in which case the app
+    /// would tail an empty file forever and report a detection that is not running.
+    /// </summary>
+    public static bool IsProbeWriterRunning()
+    {
+        try
+        {
+            var psi = new ProcessStartInfo("/bin/launchctl")
+            {
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            };
+            psi.ArgumentList.Add("print");
+            psi.ArgumentList.Add($"system/{ProbeDaemonLabel}");
+
+            using var p = Process.Start(psi);
+            if (p == null) return false;
+            p.StandardOutput.ReadToEnd();
+            p.StandardError.ReadToEnd();
+            p.WaitForExit(4000);
+            return p.ExitCode == 0;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     /// <summary>
     /// Ensures /etc/pf.conf references our anchor (with backup), once.
     /// </summary>
     private FirewallOperationResult EnsureAnchorHooked()
+        => RunPrivilegedShell(AnchorHookScript());
+
+    /// <summary>
+    /// Idempotent shell fragment: create the anchor file if missing, append the
+    /// pf.conf anchor lines if absent, enable and reload PF. Safe to run repeatedly
+    /// and safe to concatenate ahead of other privileged commands.
+    /// </summary>
+    private static string AnchorHookScript()
     {
         var marker = $"anchor \"{PfAnchorName}\"";
         var loadLine = $"load anchor \"{PfAnchorName}\" from \"/etc/pf.anchors/{PfAnchorName}\"";
         var emptyRules = $"/etc/pf.anchors/{PfAnchorName}";
 
-        // Idempotent shell: create anchor file if missing; append pf.conf lines if absent; reload.
-        var script = $"""
+        return $"""
             set -e
             mkdir -p /etc/pf.anchors
             if [ ! -f {ShellQuote(emptyRules)} ]; then
@@ -429,10 +750,7 @@ public sealed class FirewallService
             fi
             /sbin/pfctl -e 2>/dev/null || true
             /sbin/pfctl -f /etc/pf.conf 2>/dev/null || true
-            true
             """;
-
-        return RunPrivilegedShell(script);
     }
 
     private static string UserPfRulesPath
@@ -704,6 +1022,23 @@ public sealed class FirewallRuleInfo
         FirewallRuleKind.PortBlock => "Port block",
         _ => "Rule"
     };
+    /// <summary>Best-effort IP target for display (falls back to parsing the rule name).</summary>
+    public string AddressText
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(RemoteAddresses) && RemoteAddresses is not ("Any" or "*"))
+                return RemoteAddresses;
+            var ipMatch = Regex.Match(
+                Name,
+                @"^NetworkSentinel-IP-(.+)-(In|Out)$",
+                RegexOptions.IgnoreCase);
+            if (ipMatch.Success)
+                return ipMatch.Groups[1].Value.Replace('_', ':');
+            return "";
+        }
+    }
+
     public string TargetText => Kind == FirewallRuleKind.IpBlock
         ? (string.IsNullOrWhiteSpace(RemoteAddresses) ? "—" : RemoteAddresses)
         : $"{Protocol}/{LocalPorts}";
