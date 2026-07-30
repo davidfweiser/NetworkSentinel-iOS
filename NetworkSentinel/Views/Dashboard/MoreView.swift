@@ -4,6 +4,7 @@ struct MoreView: View {
     @Environment(AppModel.self) private var model
     @State private var showServers = false
     @State private var showEditServer = false
+    @State private var showChangePassword = false
     @State private var allowlistValue = ""
     @State private var showAddAllowlist = false
     @State private var showBlockPort = false
@@ -36,6 +37,14 @@ struct MoreView: View {
                         showEditServer = true
                     } label: {
                         Label("Edit this server", systemImage: "pencil")
+                    }
+                    .listRowBackground(NSTheme.card)
+                    .disabled(model.server == nil)
+
+                    Button {
+                        showChangePassword = true
+                    } label: {
+                        Label("Change master password", systemImage: "key.horizontal")
                     }
                     .listRowBackground(NSTheme.card)
                     .disabled(model.server == nil)
@@ -327,6 +336,10 @@ struct MoreView: View {
                     ServerEditorView(mode: .edit(server))
                         .preferredColorScheme(.dark)
                 }
+            }
+            .sheet(isPresented: $showChangePassword) {
+                ChangePasswordView()
+                    .preferredColorScheme(.dark)
             }
             .alert("Add to allowlist", isPresented: $showAddAllowlist) {
                 TextField("domain or IP", text: $allowlistValue)

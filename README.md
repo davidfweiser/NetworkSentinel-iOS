@@ -10,22 +10,35 @@ Connect to one or more hosts running the headless web UI (`-w` / `--web`), sign 
 |------|----------------|
 | **Multi-server** | Add/edit/delete servers; switch between home, lab, VPS, etc. |
 | **Dashboard** | Live stats, activity sparkline, pause/resume, auto-block controls |
+| **Detection** | Toggle geo lookups, auth-log brute-force monitoring, and closed-port scan detection, with the server's status text inline |
 | **Threats** | Severity filters, search, clear alerts, block source IP |
 | **Hosts** | Remote peers with geo/threat badges; swipe to block/unblock |
 | **Connections** | Live process + endpoint table; block remote peers |
-| **More** | Listening ports, firewall rules, allowlist add/remove/refresh |
+| **More** | Listening ports, firewall rules, allowlist add/remove/refresh, change master password |
 | **Secure storage** | Session tokens & optional remembered passwords in Keychain |
 
-Talks to the same JSON API as the browser console (Linux & Windows web **0.3.x**):
+Talks to the same JSON API as the browser console (Linux & Windows web **0.3.x**, current through **0.3.4**):
 
 - `GET /api/auth/status`
 - `POST /api/auth/login` · `/api/auth/setup` · `/api/auth/logout`
-- `GET /api/state` (settings include `geoLookupEnabled` / `allowlistUseRemoteFeed`; rules include `isProtected`, `address`, `ports`)
+- `POST /api/auth/change-password` (0.3.2+) — `currentPassword`, `newPassword`, `confirm`
+- `GET /api/state` (settings include `geoLookupEnabled` / `allowlistUseRemoteFeed` / `authLogMonitorEnabled` + `authLogStatus` / `probeLogEnabled` + `probeLogStatus`; rules include `isProtected`, `address`, `ports`)
 - `POST /api/action` — `block`, `unblock`, `set_setting`, `block_port`, `unblock_port`, `remove_rule`, `remove_all_rules`, allowlist, auto-block, …
 
 Sessions use the web UI’s `ns_session` cookie, sent as `Authorization: Bearer` from the app.
 
-Compatible with older web servers for core monitor/block; 0.3-only settings and actions appear when the server advertises them.
+Compatible with older web servers for core monitor/block; newer settings and actions appear only when the server advertises them, so the detection toggles stay hidden on servers that predate them.
+
+### Detection settings (0.3.4)
+
+- **Auth-log monitoring** — watches system auth logs for failed SSH/PAM logons and raises brute-force threats.
+- **Closed-port scan detection** — installs a rate-limited firewall SYN-log rule (needs elevation on the server) and watches the kernel log, catching port scans that never show up as connections.
+
+Both toggles show the server's own status line, so you can tell when a feature is on but blocked (for example, waiting on elevation — use **Authorize firewall** in More).
+
+### Changing the master password
+
+**More → Change master password** calls the 0.3.2+ endpoint. The server keeps this device signed in and revokes every other session; if you saved the password on this device, the Keychain copy is updated so background refresh keeps working.
 
 ## Requirements
 

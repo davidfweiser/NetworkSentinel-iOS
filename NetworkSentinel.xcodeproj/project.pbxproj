@@ -13,6 +13,7 @@
 		3CE2B8850CC791A3F1019D4E /* BackgroundRefresh.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6EF72769ACEFB56906AE266 /* BackgroundRefresh.swift */; };
 		432310299222C289433DC265 /* ThreatsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4532945338DDCF9B2A15610A /* ThreatsView.swift */; };
 		499C268941C90A4EED1C689B /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBA5D1340BDB96309E3FF80D /* AppModel.swift */; };
+		505661F98DD4B0C33656D53B /* ChangePasswordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE8874F597FEA5362A4FDC39 /* ChangePasswordView.swift */; };
 		599A5D8A1FA03C86017D2E96 /* ConnectionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF3437A8A628A01763AABAA8 /* ConnectionsView.swift */; };
 		78E58F9A8CDCB1F85BAC5B35 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B676AA60D502FB7A12C8AA2 /* OnboardingView.swift */; };
 		7E4C3E5FE6439119D85ED3F7 /* NetworkSentinelApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F580F2DAB752302A83956B6 /* NetworkSentinelApp.swift */; };
@@ -50,6 +51,7 @@
 		D2FFB791D1583B17EE570607 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		E8030D8B55F5057DCDA4EA02 /* MoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoreView.swift; sourceTree = "<group>"; };
 		EF3437A8A628A01763AABAA8 /* ConnectionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionsView.swift; sourceTree = "<group>"; };
+		FE8874F597FEA5362A4FDC39 /* ChangePasswordView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChangePasswordView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -110,6 +112,7 @@
 			isa = PBXGroup;
 			children = (
 				5B8AF44484F464EAD93296DD /* AuthView.swift */,
+				FE8874F597FEA5362A4FDC39 /* ChangePasswordView.swift */,
 				3B676AA60D502FB7A12C8AA2 /* OnboardingView.swift */,
 				3AE7012AC9352A900E8DE772 /* ServersListView.swift */,
 			);
@@ -205,6 +208,7 @@
 				499C268941C90A4EED1C689B /* AppModel.swift in Sources */,
 				38D188CF1B276138BB3CC10E /* AuthView.swift in Sources */,
 				3CE2B8850CC791A3F1019D4E /* BackgroundRefresh.swift in Sources */,
+				505661F98DD4B0C33656D53B /* ChangePasswordView.swift in Sources */,
 				599A5D8A1FA03C86017D2E96 /* ConnectionsView.swift in Sources */,
 				A15FD925902247360BE96367 /* CriticalAlertService.swift in Sources */,
 				A757C7EF1289D44279A075C2 /* DashboardView.swift in Sources */,

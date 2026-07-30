@@ -95,6 +95,49 @@ actor APIClient {
         return (body, token)
     }
 
+    /// Change the master password (web ≥ 0.3.3, `POST /api/auth/change-password`).
+    /// The server keeps the calling session alive and revokes every other one, so the
+    /// app's token stays valid — but any remembered password must be re-stored by the caller.
+    func changePassword(
+        baseURL: String,
+        token: String?,
+        current: String,
+        new: String,
+        confirm: String
+    ) async throws -> AuthResponse {
+        let url = try url(base: baseURL, path: "/api/auth/change-password")
+        var req = request(url: url, method: "POST", token: token)
+        req.httpBody = try encoder.encode([
+            "currentPassword": current,
+            "newPassword": new,
+            "confirm": confirm
+        ])
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let (data, response) = try await session.data(for: req)
+        if let http = response as? HTTPURLResponse, http.statusCode == 401 {
+            let msg = (try? decoder.decode(AuthResponse.self, from: data))?.message
+            throw APIError.unauthorized(msg)
+        }
+        // Validation failures come back as HTTP 400 + `{ ok: false, message }`.
+        if let http = response as? HTTPURLResponse, http.statusCode == 400,
+           let failed = try? decoder.decode(AuthResponse.self, from: data) {
+            throw APIError.serverMessage(failed.message ?? "Could not change the master password.")
+        }
+        // Servers older than web 0.3.2 have no such route — say so instead of "HTTP 404".
+        if let http = response as? HTTPURLResponse, http.statusCode == 404 {
+            throw APIError.serverMessage(
+                "This server is too old to change the master password from the app. Update Network Sentinel to 0.3.2 or newer."
+            )
+        }
+        try throwIfNeeded(response: response, data: data)
+        let body: AuthResponse = try decode(data)
+        guard body.ok else {
+            throw APIError.serverMessage(body.message ?? "Could not change the master password.")
+        }
+        return body
+    }
+
     func logout(baseURL: String, token: String?) async throws {
         let url = try url(base: baseURL, path: "/api/auth/logout")
         var req = request(url: url, method: "POST", token: token)

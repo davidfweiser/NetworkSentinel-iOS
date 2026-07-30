@@ -456,6 +456,26 @@ final class AppModel {
         applyState(s, server: server)
     }
 
+    /// Change the server's master password (web ≥ 0.3.3).
+    /// The server keeps this session and revokes all others, so we stay signed in —
+    /// but a remembered password would go stale and break background auto-login, so
+    /// re-store it here whenever one exists.
+    func changeMasterPassword(current: String, new: String, confirm: String) async throws {
+        guard let server else { throw APIError.invalidURL }
+        let resp = try await api.changePassword(
+            baseURL: server.baseURL,
+            token: store.sessionToken(for: server.id),
+            current: current,
+            new: new,
+            confirm: confirm
+        )
+        if store.rememberedPassword(for: server.id) != nil {
+            store.setRememberedPassword(new, for: server.id)
+        }
+        statusBanner = resp.message ?? "Master password updated."
+        await refresh(silent: true)
+    }
+
     func logout() async {
         guard let server else { return }
         let token = store.sessionToken(for: server.id)
@@ -537,6 +557,10 @@ final class AppModel {
     func setBlockInbound(_ on: Bool) async { await setSetting("blockInbound", enabled: on) }
     func setBlockOutbound(_ on: Bool) async { await setSetting("blockOutbound", enabled: on) }
     func setGeoLookup(_ on: Bool) async { await setSetting("geoLookupEnabled", enabled: on) }
+    /// Web 0.3.3+: watch system auth logs for failed SSH/PAM logons.
+    func setAuthLogMonitor(_ on: Bool) async { await setSetting("authLogMonitorEnabled", enabled: on) }
+    /// Web 0.3.4+: firewall SYN logging to catch scans of closed ports. Needs elevation on the server.
+    func setProbeLog(_ on: Bool) async { await setSetting("probeLogEnabled", enabled: on) }
     func setAllowlistRemoteFeed(_ on: Bool) async { await setSetting("allowlistUseRemoteFeed", enabled: on) }
     func setAutoBlockEnabled(_ on: Bool) async { await setSetting("autoBlockEnabled", enabled: on) }
 

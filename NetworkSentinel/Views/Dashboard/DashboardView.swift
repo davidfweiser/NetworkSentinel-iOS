@@ -155,6 +155,7 @@ struct DashboardView: View {
             if let activity = model.state?.activity, !activity.isEmpty {
                 ActivitySparkline(points: activity)
                     .frame(height: 72)
+                chartLegend(activity)
             } else {
                 Text("Waiting for samples…")
                     .font(.caption)
@@ -163,6 +164,56 @@ struct DashboardView: View {
             }
         }
         .nsCard()
+    }
+
+    /// Mirrors the web console's chart-meta row so the marker colour has a key.
+    private func chartLegend(_ activity: [ActivityPoint]) -> some View {
+        let now = activity.last?.connections ?? 0
+        let peak = activity.map { $0.connections ?? 0 }.max() ?? 0
+        let threatTotal = activity.reduce(0) { $0 + ($1.threats ?? 0) }
+
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 14) {
+                legendKey(
+                    isBar: false,
+                    color: NSTheme.cyan,
+                    text: "Connections · now \(now) · peak \(peak)"
+                )
+                legendKey(
+                    isBar: true,
+                    color: NSTheme.threatMarker,
+                    text: threatTotal > 0 ? "Threats · \(threatTotal) in window" : "Threats · none in window"
+                )
+                Spacer(minLength: 0)
+            }
+
+            HStack {
+                Text(activity.first?.time ?? "")
+                Spacer()
+                Text(activity.last?.time ?? "")
+            }
+            .font(.caption2.monospaced())
+            .foregroundStyle(NSTheme.muted)
+        }
+    }
+
+    private func legendKey(isBar: Bool, color: Color, text: String) -> some View {
+        HStack(spacing: 5) {
+            if isBar {
+                RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                    .fill(color.opacity(0.55))
+                    .frame(width: 4, height: 11)
+            } else {
+                Circle()
+                    .fill(color)
+                    .frame(width: 7, height: 7)
+            }
+            Text(text)
+                .font(.caption2)
+                .foregroundStyle(NSTheme.muted)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
     }
 
     private var controlsCard: some View {
@@ -232,6 +283,24 @@ struct DashboardView: View {
                             isOn: settings?.allowlistUseRemoteFeed ?? true
                         ) { await model.setAllowlistRemoteFeed($0) }
                     }
+                    // Web 0.3.3+ — auth-log brute-force detection.
+                    if settings?.authLogMonitorEnabled != nil {
+                        Divider().overlay(NSTheme.border)
+                        settingToggle(
+                            title: "Auth-log monitoring",
+                            subtitle: settings?.authLogStatus,
+                            isOn: settings?.authLogMonitorEnabled ?? false
+                        ) { await model.setAuthLogMonitor($0) }
+                    }
+                    // Web 0.3.4+ — closed-port scan detection (needs elevation on the server).
+                    if settings?.probeLogEnabled != nil {
+                        Divider().overlay(NSTheme.border)
+                        settingToggle(
+                            title: "Closed-port scan detection",
+                            subtitle: settings?.probeLogStatus,
+                            isOn: settings?.probeLogEnabled ?? false
+                        ) { await model.setProbeLog($0) }
+                    }
                 }
                 .padding(.horizontal, 4)
                 .padding(.vertical, 2)
@@ -241,14 +310,28 @@ struct DashboardView: View {
         .nsCard()
     }
 
-    private func settingToggle(title: String, isOn: Bool, action: @escaping (Bool) async -> Void) -> some View {
+    private func settingToggle(
+        title: String,
+        subtitle: String? = nil,
+        isOn: Bool,
+        action: @escaping (Bool) async -> Void
+    ) -> some View {
         Toggle(isOn: Binding(
             get: { isOn },
             set: { newValue in Task { await action(newValue) } }
         )) {
-            Text(title)
-                .font(.subheadline)
-                .foregroundStyle(NSTheme.text)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline)
+                    .foregroundStyle(NSTheme.text)
+                // Server-side status (which log is watched, or why it is unavailable).
+                if let subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.caption2)
+                        .foregroundStyle(NSTheme.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
         }
         .tint(NSTheme.accent)
         .padding(.horizontal, 12)

@@ -87,6 +87,14 @@ struct SettingsInfo: Codable {
     let geoLookupEnabled: Bool?
     /// Present on Network Sentinel web ≥ 0.3.0
     let allowlistUseRemoteFeed: Bool?
+    /// Auth-log brute-force monitoring — present on web ≥ 0.3.3
+    let authLogMonitorEnabled: Bool?
+    /// Human-readable state of the auth-log watcher (which log, or why it is unavailable).
+    let authLogStatus: String?
+    /// Closed-port scan detection via firewall SYN logging — present on web ≥ 0.3.4
+    let probeLogEnabled: Bool?
+    /// Human-readable state of the probe-log watcher (rule installed, needs elevation, …).
+    let probeLogStatus: String?
     let isMonitoring: Bool?
 }
 
