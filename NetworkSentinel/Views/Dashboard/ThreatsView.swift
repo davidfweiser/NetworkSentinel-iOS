@@ -62,23 +62,29 @@ struct ThreatsView: View {
             .background(NSTheme.bg.ignoresSafeArea())
             .navigationTitle("Threats")
             .searchable(text: $query, prompt: "IP, title, type")
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Picker("Filter", selection: $filter) {
-                        ForEach(ThreatFilter.allCases) { f in
-                            Text(f.rawValue).tag(f)
-                        }
+            // Segmented filter must not live in the nav toolbar — on a phone it
+            // collapses into an unreadable circle (All/High+/Critical → "A t C").
+            .safeAreaInset(edge: .top, spacing: 0) {
+                Picker("Filter", selection: $filter) {
+                    ForEach(ThreatFilter.allCases) { f in
+                        Text(f.rawValue).tag(f)
                     }
-                    .pickerStyle(.segmented)
-                    .frame(maxWidth: 220)
                 }
+                .pickerStyle(.segmented)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(NSTheme.bg)
+            }
+            .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         Task { await model.clearThreats() }
                     } label: {
-                        Image(systemName: "trash")
+                        Label("Clear", systemImage: "trash")
+                            .labelStyle(.titleAndIcon)
                     }
                     .disabled((model.state?.threats ?? []).isEmpty)
+                    .accessibilityLabel("Clear threats")
                 }
             }
             .refreshable { await model.refresh(silent: false) }
