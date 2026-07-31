@@ -111,7 +111,11 @@ severity drives the whole surface rather than a single badge:
 **Needs attention** surfaces the single worst live threat with a Block button, so acting on
 the thing the app exists to catch does not start with scanning a list. A Critical arriving
 while you are in the app shows a non-blocking banner rather than a modal alert — the modal
-used to cover the very card offering the same action.
+used to cover the very card offering the same action. Acting on a threat — block, unblock,
+clear — holds that banner back for 20s, since the refresh right after an action reliably
+turns up the next backlog Critical and letting it slam over the confirmation reads as "your
+block did nothing"; notifications, the tab badge and the Threats list are unaffected, only
+the in-app banner waits its turn.
 
 The activity chart is Swift Charts: drag anywhere on it to pin a sample and read its exact
 connection, host and threat counts, with the same red markers and zero baseline the web
