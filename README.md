@@ -4,7 +4,7 @@ Native **macOS** desktop app for **live network monitoring**, **remote peer trac
 
 > Awareness / monitoring tooling — not a full IDS/IPS replacement.
 
-macOS port of [davidfweiser/NetworkSentinel](https://github.com/davidfweiser/NetworkSentinel) (Linux Avalonia / original Windows WPF). Platform layers use **`lsof`/`netstat`**, **PF (`pfctl`)** elevated via **osascript** or **sudo**, the **macOS unified log** (`log stream`), and **`~/Library/Application Support/NetworkSentinel`**. Version **0.3.5**.
+macOS port of [davidfweiser/NetworkSentinel](https://github.com/davidfweiser/NetworkSentinel) (Linux Avalonia / original Windows WPF). Platform layers use **`lsof`/`netstat`/`nettop`**, **PF (`pfctl`)** elevated via **osascript** or **sudo**, the **macOS unified log** (`log stream`), and **`~/Library/Application Support/NetworkSentinel`**. Version **0.4.0**.
 
 ---
 
@@ -28,9 +28,24 @@ Heuristics flag patterns such as:
 - SSH and SMB hammering
 - Sensitive-port probing (admin, DB, remote access)
 - Short-lived / transitional TCP bursts
-- First-seen remote hosts
+- First-seen remote hosts — tracked **across restarts** (30-day persistent host history), so relaunching doesn't make every known peer look new again
+- **UDP peers** — connected UDP sockets with a real remote address count toward the scan/probe heuristics and the Remote Computers view (multicast/broadcast chatter like mDNS/SSDP is excluded)
 
-Each alert includes **source IP**, **method**, and **where it’s coming from** (DNS + best-effort geo).
+### Intrusion detection (0.4.0)
+| Detector | What it catches |
+|----------|-----------------|
+| **New-listener alerts** | A new port starts listening after the baseline (backdoor/implant signature), or a known port changes owner process (service replaced/impersonated). Baseline persists in `host-history.json`; loopback-only and ephemeral (49152+) listeners are skipped. |
+| **Threat-intel blocklists** | Remote IPs checked against **FireHOL level1** and **Spamhaus DROP** (fetched daily over HTTPS, cached offline). A match is an instant **Critical** — those ranges are attack infrastructure. |
+| **Process reputation** | Shells/interpreters (`bash`, `python`, `nc`, …) holding outbound connections to public hosts (reverse-shell signature, High); binaries running from `/tmp`, `~/Downloads`, `/Users/Shared` with network activity; **unsigned** (`codesign`) or **quarantined** binaries talking to public addresses. Executable paths resolve via `libproc` — no per-poll shelling out. |
+| **Honeypot decoy ports** (opt-in) | Binds decoy TCP ports (default `2323,3389,5900`). Nothing legitimate connects to a decoy, so any completed connection is a **zero-false-positive Critical**. Busy ports are skipped automatically. |
+| **ARP / gateway watch** | The default gateway's MAC address changing (**Critical** — classic ARP-spoof MITM opener) or another LAN IP claiming the gateway's MAC (High). |
+| **Launch-item watch** | New or modified plists in `~/Library/LaunchAgents`, `/Library/LaunchAgents`, `/Library/LaunchDaemons` — the standard persistence step right after a successful intrusion. |
+| **Exfiltration monitor** | `nettop` per-connection byte counters; alerts when outbound traffic to a single non-allowlisted public host exceeds a threshold (default **250 MB / 10 min**). LAN destinations (NAS backups) and allowlisted hosts stay quiet. |
+
+Each alert includes **source IP**, **method**, and **where it’s coming from** (DNS + best-effort geo). Threat events and the host/listener baseline **persist across restarts** (`threat-log.jsonl`, `host-history.json`).
+
+### Remote alerting (webhook)
+Set **Settings → Webhook URL** to push Critical threats off the machine — the payload adapts automatically: **ntfy** (plain text + `Title`/`Priority` headers), **Slack** (`{"text": …}`), **Discord** (`{"content": …}`), anything else gets a generic JSON document. Per-source/type cooldown stops a burst from flooding the channel.
 
 **Critical alerts (on by default).** A `Critical` threat is announced actively rather than just added to a list: the desktop app posts a macOS notification, and the web console badges the tab title (`⚠ 2 · Network Sentinel`) and raises a browser notification. Repeats of the same source + threat type are suppressed for 5 minutes so a burst can't spam you. Turn it off under **Settings → Critical threat alerts**.
 

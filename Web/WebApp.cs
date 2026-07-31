@@ -78,9 +78,25 @@ public sealed class WebApp : IDisposable
         _blockOutbound = _settings.AutoBlockOutbound;
 
         _firewall.Allowlist = _allowlist;
+        _firewall.AutoBlockExpiry = _settings.AutoBlockExpiryMinutes > 0
+            ? TimeSpan.FromMinutes(_settings.AutoBlockExpiryMinutes)
+            : null;
+        _firewall.StartExpirySweep();
         _monitor.GeoLookupsEnabled = _settings.GeoLookupEnabled;
         _monitor.AuthMonitoringEnabled = _settings.AuthLogMonitorEnabled;
         _monitor.ProbeMonitoringEnabled = _settings.ProbeLogEnabled;
+        _monitor.ThreatIntelEnabled = _settings.ThreatIntelEnabled;
+        _monitor.ProcessReputationEnabled = _settings.ProcessReputationEnabled;
+        _monitor.NewListenerAlertsEnabled = _settings.NewListenerAlertsEnabled;
+        _monitor.ArpWatchEnabled = _settings.ArpWatchEnabled;
+        _monitor.LaunchWatchEnabled = _settings.LaunchItemWatchEnabled;
+        _monitor.ExfilMonitorEnabled = _settings.ExfilMonitorEnabled;
+        _monitor.ExfilThresholdMb = _settings.ExfilMbPer10Min;
+        _monitor.HoneypotPorts = HoneypotService.ParsePorts(_settings.HoneypotPorts);
+        _monitor.HoneypotEnabled = _settings.HoneypotEnabled;
+        _monitor.WebhookUrl = _settings.WebhookUrl;
+        _monitor.WebhookMinLevel = _settings.GetWebhookMinLevel();
+        _monitor.IsIpAllowlisted = ip => _allowlist.IsAllowed(ip, out _);
         if (_settings.ProbeLogEnabled && _firewall.IsRoot)
             _ = Task.Run(() => _firewall.EnableProbeLogging());
         _allowlist.UseRemoteFeed = _settings.AllowlistUseRemoteFeed;
@@ -611,6 +627,79 @@ public sealed class WebApp : IDisposable
                             _settings.CriticalAlertsEnabled = on;
                             label = $"Critical threat alerts: {(on ? "on" : "off")}";
                             break;
+                        case "threatIntelEnabled":
+                            _monitor.ThreatIntelEnabled = on;
+                            _settings.ThreatIntelEnabled = on;
+                            label = on ? $"Threat-intel feeds: on ({_monitor.ThreatIntelStatus})" : "Threat-intel feeds: off";
+                            break;
+                        case "processReputationEnabled":
+                            _monitor.ProcessReputationEnabled = on;
+                            _settings.ProcessReputationEnabled = on;
+                            label = $"Process reputation checks: {(on ? "on" : "off")}";
+                            break;
+                        case "newListenerAlertsEnabled":
+                            _monitor.NewListenerAlertsEnabled = on;
+                            _settings.NewListenerAlertsEnabled = on;
+                            label = $"New-listener alerts: {(on ? "on" : "off")}";
+                            break;
+                        case "arpWatchEnabled":
+                            _monitor.ArpWatchEnabled = on;
+                            _settings.ArpWatchEnabled = on;
+                            label = on ? $"ARP / gateway watch: on ({_monitor.ArpWatchStatus})" : "ARP / gateway watch: off";
+                            break;
+                        case "launchItemWatchEnabled":
+                            _monitor.LaunchWatchEnabled = on;
+                            _settings.LaunchItemWatchEnabled = on;
+                            label = on ? $"Launch-item watch: on ({_monitor.LaunchWatchStatus})" : "Launch-item watch: off";
+                            break;
+                        case "exfilMonitorEnabled":
+                            _monitor.ExfilMonitorEnabled = on;
+                            _settings.ExfilMonitorEnabled = on;
+                            label = on ? $"Exfiltration monitor: on ({_monitor.ExfilStatus})" : "Exfiltration monitor: off";
+                            break;
+                        case "exfilMbPer10Min":
+                            if (!int.TryParse(raw, out var mb) || mb < 10)
+                                return ActionResultDto.Fail("Exfiltration threshold must be a number ≥ 10 (MB per 10 minutes).");
+                            _monitor.ExfilThresholdMb = mb;
+                            _settings.ExfilMbPer10Min = mb;
+                            label = $"Exfiltration alert threshold: {mb} MB / 10 min";
+                            break;
+                        case "honeypotEnabled":
+                            _monitor.HoneypotPorts = HoneypotService.ParsePorts(_settings.HoneypotPorts);
+                            _monitor.HoneypotEnabled = on;
+                            _settings.HoneypotEnabled = on;
+                            label = on ? _monitor.HoneypotStatus : "Honeypot: off";
+                            break;
+                        case "honeypotPorts":
+                        {
+                            var ports = HoneypotService.ParsePorts(raw);
+                            if (ports.Count == 0)
+                                return ActionResultDto.Fail("Enter decoy ports as a comma-separated list, e.g. 2323,3389,5900.");
+                            if (ports.Contains(_port))
+                                return ActionResultDto.Fail($"Port {_port} serves this web console — pick different decoy ports.");
+                            _settings.HoneypotPorts = string.Join(",", ports);
+                            _monitor.HoneypotPorts = ports;
+                            label = _settings.HoneypotEnabled
+                                ? _monitor.HoneypotStatus
+                                : $"Decoy ports saved ({_settings.HoneypotPorts}) — enable the honeypot to arm them.";
+                            break;
+                        }
+                        case "webhookUrl":
+                            _monitor.WebhookUrl = raw;
+                            _settings.WebhookUrl = raw;
+                            label = string.IsNullOrEmpty(raw)
+                                ? "Webhook alerts: off"
+                                : $"Webhook alerts: Critical threats will POST to {raw}";
+                            break;
+                        case "autoBlockExpiryMinutes":
+                            if (!int.TryParse(raw, out var minutes) || minutes < 0)
+                                return ActionResultDto.Fail("Expiry must be a number of minutes (0 = never).");
+                            _settings.AutoBlockExpiryMinutes = minutes;
+                            _firewall.AutoBlockExpiry = minutes > 0 ? TimeSpan.FromMinutes(minutes) : null;
+                            label = minutes == 0
+                                ? "Auto-block rules are permanent until removed."
+                                : $"New auto-block rules expire after {minutes} minutes.";
+                            break;
                         default:
                             return ActionResultDto.Fail($"Unknown setting: {key}");
                     }
@@ -853,6 +942,23 @@ public sealed class WebApp : IDisposable
                 probeLogStatus = _monitor.ProbeLogStatus,
                 allowlistUseRemoteFeed = _settings.AllowlistUseRemoteFeed,
                 criticalAlertsEnabled = _settings.CriticalAlertsEnabled,
+                threatIntelEnabled = _settings.ThreatIntelEnabled,
+                threatIntelStatus = _monitor.ThreatIntelStatus,
+                processReputationEnabled = _settings.ProcessReputationEnabled,
+                newListenerAlertsEnabled = _settings.NewListenerAlertsEnabled,
+                arpWatchEnabled = _settings.ArpWatchEnabled,
+                arpWatchStatus = _monitor.ArpWatchStatus,
+                launchItemWatchEnabled = _settings.LaunchItemWatchEnabled,
+                launchWatchStatus = _monitor.LaunchWatchStatus,
+                exfilMonitorEnabled = _settings.ExfilMonitorEnabled,
+                exfilMbPer10Min = _settings.ExfilMbPer10Min,
+                exfilStatus = _monitor.ExfilStatus,
+                honeypotEnabled = _settings.HoneypotEnabled,
+                honeypotPorts = _settings.HoneypotPorts,
+                honeypotStatus = _monitor.HoneypotStatus,
+                webhookUrl = _settings.WebhookUrl,
+                webhookStatus = _monitor.WebhookStatus,
+                autoBlockExpiryMinutes = _settings.AutoBlockExpiryMinutes,
                 isMonitoring = stats.IsMonitoring
             },
             stats = new
@@ -1019,7 +1125,7 @@ public sealed class WebApp : IDisposable
             }
 
             var reason = $"Auto-block · {threat.LevelText} · {threat.TypeText}: {threat.Title}";
-            var result = _firewall.BlockIp(ip, direction, reason);
+            var result = _firewall.BlockIp(ip, direction, reason, expiresAfter: _firewall.AutoBlockExpiry);
             if (result.Success)
             {
                 lock (_autoBlockGate) _blockedIps.Add(ip);
@@ -2152,6 +2258,8 @@ public sealed class WebApp : IDisposable
       </div>`;
     const sw = (key, checked) =>
       `<label class="switch"><input type="checkbox" data-setting="${key}" ${checked ? 'checked' : ''}/><span class="slider"></span></label>`;
+    const txt = (key, value, ph) =>
+      `<input type="text" data-setting-text="${key}" value="${esc(String(value ?? ''))}" placeholder="${esc(ph)}" style="min-width:180px"/>`;
     const levelSel = `<select data-set-level>${['Medium', 'High', 'Critical']
       .map(l => `<option ${s.autoBlockMinLevel === l ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
     const refreshSel = `<select data-set-refresh>${[['1000', '1 second'], ['2500', '2.5 seconds'], ['5000', '5 seconds'], ['10000', '10 seconds']]
@@ -2166,11 +2274,26 @@ public sealed class WebApp : IDisposable
         ${row('Closed-port scan detection', 'Install a PF SYN-log rule and decode pflog0 (needs admin rights) — catches port scans of closed ports that never appear as connections. ' + (s.probeLogStatus || ''), sw('probeLogEnabled', s.probeLogEnabled))}
         ${row('Critical threat alerts', 'Badge the tab title and pop a browser notification when a Critical-level threat appears. Your browser asks for notification permission when you switch this on. ' + notifPermText(), sw('criticalAlertsEnabled', s.criticalAlertsEnabled))}
       </div>
+      <div class="settings-group"><h3>Intrusion detection</h3>
+        ${row('Threat-intel blocklists', 'Check remote IPs against FireHOL level1 and Spamhaus DROP — a match is an instant Critical alert. ' + (s.threatIntelStatus || ''), sw('threatIntelEnabled', s.threatIntelEnabled))}
+        ${row('New-listener alerts', 'Alert when a new port starts listening after the baseline, or a known port changes owner process (backdoor signature).', sw('newListenerAlertsEnabled', s.newListenerAlertsEnabled))}
+        ${row('Process reputation', 'Flag unsigned/quarantined binaries talking to public hosts, executables in temp/download folders, and shells with outbound connections (reverse-shell signature).', sw('processReputationEnabled', s.processReputationEnabled))}
+        ${row('ARP / gateway watch', 'Alert when the default gateway MAC address changes — the standard LAN man-in-the-middle opener. ' + (s.arpWatchStatus || ''), sw('arpWatchEnabled', s.arpWatchEnabled))}
+        ${row('Launch-item watch', 'Watch LaunchAgents / LaunchDaemons for new or modified startup items — how malware persists across reboots. ' + (s.launchWatchStatus || ''), sw('launchItemWatchEnabled', s.launchItemWatchEnabled))}
+        ${row('Exfiltration monitor', 'Alert when outbound traffic to one non-allowlisted public host exceeds the threshold within 10 minutes (nettop byte counters). ' + (s.exfilStatus || ''), sw('exfilMonitorEnabled', s.exfilMonitorEnabled))}
+        ${row('Exfiltration threshold (MB / 10 min)', 'Outbound megabytes to a single host before the alert fires.', txt('exfilMbPer10Min', s.exfilMbPer10Min ?? 250, '250'))}
+        ${row('Honeypot decoy ports', 'Listen on decoy TCP ports nothing legitimate uses — any completed connection is a zero-false-positive Critical alert. ' + (s.honeypotStatus || ''), sw('honeypotEnabled', s.honeypotEnabled))}
+        ${row('Decoy port list', 'Comma-separated TCP ports to bind as decoys. Ports already in use are skipped.', txt('honeypotPorts', s.honeypotPorts || '', '2323,3389,5900'))}
+      </div>
+      <div class="settings-group"><h3>Alerting</h3>
+        ${row('Webhook URL', 'POST Critical threats to a webhook — ntfy, Slack, and Discord formats are detected automatically; anything else gets generic JSON. Empty = off. ' + (s.webhookStatus && s.webhookUrl ? s.webhookStatus : ''), txt('webhookUrl', s.webhookUrl || '', 'https://ntfy.sh/your-topic'))}
+      </div>
       <div class="settings-group"><h3>Auto-block</h3>
         ${row('Auto-block threats', 'Automatically create firewall rules when threats are detected.', sw('autoBlockEnabled', s.autoBlockEnabled))}
         ${row('Minimum severity', 'Only auto-block threats at or above this level.', levelSel)}
         ${row('Block inbound', 'New block rules stop traffic coming in to this machine.', sw('blockInbound', s.blockInbound))}
         ${row('Block outbound', 'New block rules stop traffic going out from this machine.', sw('blockOutbound', s.blockOutbound))}
+        ${row('Auto-block expiry (minutes)', 'Automatically remove auto-created block rules after this many minutes (0 = never). Cleanup is silent when possible, otherwise happens at the next firewall change.', txt('autoBlockExpiryMinutes', s.autoBlockExpiryMinutes ?? 0, '0'))}
       </div>
       <div class="settings-group"><h3>Allowlist</h3>
         ${row('Remote allowlist feed', 'Refresh the known-good domain/IP list from the online feed.', sw('allowlistUseRemoteFeed', s.allowlistUseRemoteFeed))}
@@ -2268,6 +2391,10 @@ public sealed class WebApp : IDisposable
         Notification.requestPermission().then(() => renderSettings());
       if (key === 'monitoring') apiAction('toggle_monitor');
       else apiAction('set_setting', { name: key, value: t.checked ? 'true' : 'false' });
+      return;
+    }
+    if (t.matches('[data-setting-text]')) {
+      apiAction('set_setting', { name: t.dataset.settingText, value: t.value.trim() });
       return;
     }
     if (t.matches('[data-set-level]')) { apiAction('set_min_level', { value: t.value }); return; }

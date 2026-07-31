@@ -53,13 +53,13 @@ internal static class MacNetTable
         return ReadTcpViaNetstat();
     }
 
-    public static IReadOnlyList<ListeningPort> GetUdpListeners()
+    public static (IReadOnlyList<ListeningPort> Listeners, IReadOnlyList<NetworkConnection> Connections) GetUdpTable()
     {
-        var fromLsof = ReadUdpViaLsof();
-        if (fromLsof.Count > 0)
-            return fromLsof;
+        var (listeners, connections) = ReadUdpViaLsof();
+        if (listeners.Count > 0 || connections.Count > 0)
+            return (listeners, connections);
 
-        return ReadUdpViaNetstat();
+        return (ReadUdpViaNetstat(), Array.Empty<NetworkConnection>());
     }
 
     private static List<NetworkConnection> ReadTcpViaLsof()
@@ -150,11 +150,12 @@ internal static class MacNetTable
         return DedupConnections(result);
     }
 
-    private static List<ListeningPort> ReadUdpViaLsof()
+    private static (List<ListeningPort> Listeners, List<NetworkConnection> Connections) ReadUdpViaLsof()
     {
-        var result = new List<ListeningPort>();
+        var listeners = new List<ListeningPort>();
+        var connections = new List<NetworkConnection>();
         if (!TryRun("lsof", "-nP -iUDP -Fpcn", out var output))
-            return result;
+            return (listeners, connections);
 
         int pid = 0;
         foreach (var raw in output.Split('\n'))
@@ -169,12 +170,28 @@ internal static class MacNetTable
                     _ = int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out pid);
                     break;
                 case 'n':
-                    // UDP "connections" and unbound: local only or local->remote
-                    if (!TryParseLsofName(value, out var localIp, out var localPort, out _, out _, out _))
+                    // UDP sockets: unbound/listening (local only, or "*" remote) or
+                    // connected (local->remote with a real peer address).
+                    if (!TryParseLsofName(value, out var localIp, out var localPort, out var remoteIp, out var remotePort, out _))
                         break;
                     if (localPort <= 0) break;
-                    // Prefer unbound / listening-style (no remote half or * remote)
-                    result.Add(new ListeningPort
+
+                    if (remotePort > 0 && remoteIp is not ("" or "0.0.0.0" or "*" or "::"))
+                    {
+                        connections.Add(new NetworkConnection
+                        {
+                            Protocol = "UDP",
+                            LocalAddress = localIp,
+                            LocalPort = localPort,
+                            RemoteAddress = remoteIp,
+                            RemotePort = remotePort,
+                            State = TcpConnectionState.Established,
+                            ProcessId = pid
+                        });
+                        break;
+                    }
+
+                    listeners.Add(new ListeningPort
                     {
                         Protocol = "UDP",
                         Address = localIp,
@@ -186,7 +203,7 @@ internal static class MacNetTable
             }
         }
 
-        return DedupListeners(result);
+        return (DedupListeners(listeners), DedupConnections(connections));
     }
 
     private static List<NetworkConnection> ReadTcpViaNetstat()
@@ -308,7 +325,7 @@ internal static class MacNetTable
     private static bool TryParseNetstatEndpoint(string token, out string ip, out int port)
         => TryParseHostPort(token, out ip, out port);
 
-    private static bool TryParseHostPort(string token, out string ip, out int port)
+    internal static bool TryParseHostPort(string token, out string ip, out int port)
     {
         ip = "";
         port = 0;
@@ -459,8 +476,8 @@ internal static class IpHelper
     public static IReadOnlyList<NetworkConnection> GetTcpConnections()
         => MacNetTable.GetTcpConnections();
 
-    public static IReadOnlyList<ListeningPort> GetUdpListeners()
-        => MacNetTable.GetUdpListeners();
+    public static (IReadOnlyList<ListeningPort> Listeners, IReadOnlyList<NetworkConnection> Connections) GetUdpTable()
+        => MacNetTable.GetUdpTable();
 }
 
 internal static class PortCatalog

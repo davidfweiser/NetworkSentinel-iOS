@@ -77,7 +77,13 @@ public sealed class FirewallService
         }
     }
 
-    public FirewallOperationResult BlockIp(string ip, FirewallDirection direction = FirewallDirection.Both, string? reason = null, bool overrideAllowlist = false)
+    /// <summary>
+    /// Expiry applied to auto-created block rules (null = permanent). Manual
+    /// blocks are always permanent; auto-block passes this through.
+    /// </summary>
+    public TimeSpan? AutoBlockExpiry { get; set; }
+
+    public FirewallOperationResult BlockIp(string ip, FirewallDirection direction = FirewallDirection.Both, string? reason = null, bool overrideAllowlist = false, TimeSpan? expiresAfter = null)
     {
         if (!TryNormalizeIp(ip, out var normalized, out var error))
             return FirewallOperationResult.Fail(error);
@@ -96,14 +102,14 @@ public sealed class FirewallService
 
         if (direction is FirewallDirection.Inbound or FirewallDirection.Both)
         {
-            var r = EnsureIpRule(normalized, isInbound: true, reason);
+            var r = EnsureIpRule(normalized, isInbound: true, reason, expiresAfter);
             ok &= r.Success;
             results.Add(r.Message);
         }
 
         if (direction is FirewallDirection.Outbound or FirewallDirection.Both)
         {
-            var r = EnsureIpRule(normalized, isInbound: false, reason);
+            var r = EnsureIpRule(normalized, isInbound: false, reason, expiresAfter);
             ok &= r.Success;
             results.Add(r.Message);
         }
@@ -338,14 +344,14 @@ public sealed class FirewallService
             return false;
 
         return GetManagedRules().Any(r =>
-            r.Kind == FirewallRuleKind.IpBlock &&
+            r.Kind == FirewallRuleKind.IpBlock && !r.IsExpired &&
             string.Equals(r.RemoteAddresses, normalized, StringComparison.OrdinalIgnoreCase));
     }
 
     public HashSet<string> GetBlockedIps()
     {
         var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var rule in GetManagedRules().Where(r => r.Kind == FirewallRuleKind.IpBlock))
+        foreach (var rule in GetManagedRules().Where(r => r.Kind == FirewallRuleKind.IpBlock && !r.IsExpired))
         {
             if (!string.IsNullOrWhiteSpace(rule.RemoteAddresses))
                 set.Add(rule.RemoteAddresses);
@@ -389,7 +395,7 @@ public sealed class FirewallService
             throw new InvalidOperationException(result.Message);
     }
 
-    private FirewallOperationResult EnsureIpRule(string ip, bool isInbound, string? reason)
+    private FirewallOperationResult EnsureIpRule(string ip, bool isInbound, string? reason, TimeSpan? expiresAfter = null)
     {
         var name = IpRuleName(ip, isInbound);
         var description = reason ?? $"Blocked by Network Sentinel at {DateTime.Now:u}";
@@ -404,7 +410,8 @@ public sealed class FirewallService
             RemoteAddresses = ip,
             LocalPorts = "",
             Protocol = "Any",
-            Kind = FirewallRuleKind.IpBlock
+            Kind = FirewallRuleKind.IpBlock,
+            ExpiresUtc = expiresAfter.HasValue ? DateTime.UtcNow + expiresAfter.Value : null
         });
 
         var applied = ApplyPfFromLedger();
@@ -476,6 +483,9 @@ public sealed class FirewallService
     private string? BuildApplyPfScript(out string error)
     {
         error = "";
+        // Every apply already carries an elevation prompt, so expired rules are
+        // dropped for free here — the ledger and the loaded ruleset stay in sync.
+        PruneExpiredFromLedger();
         var rulesPath = UserPfRulesPath;
         try
         {
@@ -502,7 +512,7 @@ public sealed class FirewallService
         sb.AppendLine($"# Generated {DateTime.Now:u}");
         sb.AppendLine();
 
-        foreach (var rule in rules.Where(r => r.Enabled && r.IsBlock))
+        foreach (var rule in rules.Where(r => r.Enabled && r.IsBlock && !r.IsExpired))
         {
             // Comment encodes rule name for remove-by-name and human debugging
             sb.AppendLine($"# {rule.Name}");
@@ -755,6 +765,64 @@ public sealed class FirewallService
 
     private static string UserPfRulesPath
         => Path.Combine(AppPaths.DataDirectory, "pf-anchor.conf");
+
+    // ── Block expiry ─────────────────────────────────────────────────────
+
+    private Timer? _expiryTimer;
+
+    /// <summary>
+    /// Starts the background sweep that removes expired block rules. Removal
+    /// needs root for pfctl, so the sweep only acts when it can elevate
+    /// silently (running as root, or sudo credentials are cached); otherwise
+    /// expired rules are cleaned up by the next user-triggered firewall
+    /// change (see <see cref="BuildApplyPfScript"/>) — never by a surprise
+    /// password dialog from a timer.
+    /// </summary>
+    public void StartExpirySweep()
+    {
+        _expiryTimer ??= new Timer(_ => TrySweepExpired(), null,
+            TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
+    }
+
+    private void TrySweepExpired()
+    {
+        try
+        {
+            if (!LoadLedger().Any(r => r.IsExpired))
+                return;
+            if (!CanElevateSilently())
+                return;
+
+            // BuildApplyPfScript prunes the ledger; the silent shell reloads PF.
+            var script = BuildApplyPfScript(out _);
+            if (script != null)
+                RunPrivilegedShell(script);
+        }
+        catch
+        {
+            // sweep is best-effort; the next manual firewall action cleans up
+        }
+    }
+
+    private bool CanElevateSilently()
+    {
+        if (IsRoot) return true;
+        try
+        {
+            return RunProcess("sudo", "-n", "/usr/bin/true").Success;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static void PruneExpiredFromLedger()
+    {
+        var ledger = LoadLedger();
+        if (ledger.RemoveAll(r => r.IsExpired) > 0)
+            SaveLedger(ledger);
+    }
 
     // ── Elevation ────────────────────────────────────────────────────────
 
@@ -1014,6 +1082,15 @@ public sealed class FirewallRuleInfo
     public string LocalPorts { get; init; } = "";
     public string Protocol { get; init; } = "Any";
     public FirewallRuleKind Kind { get; init; }
+
+    /// <summary>UTC time this rule stops applying (null = permanent). Set by auto-block expiry.</summary>
+    public DateTime? ExpiresUtc { get; init; }
+
+    public bool IsExpired => ExpiresUtc.HasValue && ExpiresUtc.Value <= DateTime.UtcNow;
+
+    public string ExpiryText => ExpiresUtc.HasValue
+        ? (IsExpired ? "Expired" : $"Expires {ExpiresUtc.Value.ToLocalTime():HH:mm}")
+        : "Permanent";
 
     public string DirectionText => Direction.ToString();
     public string KindText => Kind switch

@@ -615,6 +615,128 @@
 
               <Border Classes="card">
                 <StackPanel>
+                  <TextBlock Text="Intrusion detection" FontWeight="Bold" FontSize="15"/>
+                  <TextBlock Text="Extra detectors beyond the connection heuristics."
+                             Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12"
+                             Margin="0,4,0,14" TextWrapping="Wrap"/>
+
+                  <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,14">
+                    <StackPanel Margin="0,0,16,0">
+                      <TextBlock Text="Threat-intel blocklists" FontWeight="Bold" FontSize="13"/>
+                      <TextBlock Text="Check remote IPs against FireHOL level1 and Spamhaus DROP. A match is an instant Critical alert — those ranges are attack infrastructure."
+                                 Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11"
+                                 Margin="0,2,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <CheckBox Grid.Column="1" VerticalAlignment="Center"
+                              IsChecked="{Binding ThreatIntelEnabled}"/>
+                  </Grid>
+
+                  <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,14">
+                    <StackPanel Margin="0,0,16,0">
+                      <TextBlock Text="New-listener alerts" FontWeight="Bold" FontSize="13"/>
+                      <TextBlock Text="Alert when a new port starts listening after the baseline, or a known port changes owner process — the backdoor / implant signature."
+                                 Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11"
+                                 Margin="0,2,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <CheckBox Grid.Column="1" VerticalAlignment="Center"
+                              IsChecked="{Binding NewListenerAlertsEnabled}"/>
+                  </Grid>
+
+                  <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,14">
+                    <StackPanel Margin="0,0,16,0">
+                      <TextBlock Text="Process reputation" FontWeight="Bold" FontSize="13"/>
+                      <TextBlock Text="Flag unsigned or quarantined binaries talking to public hosts, executables running from temp/download folders, and shell processes with outbound connections (reverse-shell signature)."
+                                 Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11"
+                                 Margin="0,2,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <CheckBox Grid.Column="1" VerticalAlignment="Center"
+                              IsChecked="{Binding ProcessReputationEnabled}"/>
+                  </Grid>
+
+                  <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,14">
+                    <StackPanel Margin="0,0,16,0">
+                      <TextBlock Text="ARP / gateway watch" FontWeight="Bold" FontSize="13"/>
+                      <TextBlock Text="Watch the ARP table for the default gateway's MAC address changing — the standard LAN man-in-the-middle opener."
+                                 Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11"
+                                 Margin="0,2,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <CheckBox Grid.Column="1" VerticalAlignment="Center"
+                              IsChecked="{Binding ArpWatchEnabled}"/>
+                  </Grid>
+
+                  <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,14">
+                    <StackPanel Margin="0,0,16,0">
+                      <TextBlock Text="Launch-item watch" FontWeight="Bold" FontSize="13"/>
+                      <TextBlock Text="Watch LaunchAgents and LaunchDaemons folders for new or modified startup items — the standard way malware persists across reboots."
+                                 Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11"
+                                 Margin="0,2,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <CheckBox Grid.Column="1" VerticalAlignment="Center"
+                              IsChecked="{Binding LaunchItemWatchEnabled}"/>
+                  </Grid>
+
+                  <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,0,0,14">
+                    <StackPanel Margin="0,0,16,0">
+                      <TextBlock Text="Exfiltration monitor" FontWeight="Bold" FontSize="13"/>
+                      <TextBlock Text="Sample per-connection byte counts (nettop) and alert when outbound traffic to one non-allowlisted public host exceeds the threshold (MB per 10 minutes)."
+                                 Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11"
+                                 Margin="0,2,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <TextBox Grid.Column="1" Width="70" VerticalAlignment="Center" Margin="0,0,12,0"
+                             Text="{Binding ExfilThresholdMbText}" Watermark="250"/>
+                    <CheckBox Grid.Column="2" VerticalAlignment="Center"
+                              IsChecked="{Binding ExfilMonitorEnabled}"/>
+                  </Grid>
+
+                  <Grid ColumnDefinitions="*,Auto,Auto">
+                    <StackPanel Margin="0,0,16,0">
+                      <TextBlock Text="Honeypot decoy ports" FontWeight="Bold" FontSize="13"/>
+                      <TextBlock Text="Listen on decoy TCP ports nothing legitimate uses. Any completed connection is a zero-false-positive Critical alert. Ports already in use are skipped."
+                                 Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11"
+                                 Margin="0,2,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <TextBox Grid.Column="1" Width="130" VerticalAlignment="Center" Margin="0,0,12,0"
+                             Text="{Binding HoneypotPortsText}" Watermark="2323,3389,5900"/>
+                    <CheckBox Grid.Column="2" VerticalAlignment="Center"
+                              IsChecked="{Binding HoneypotEnabled}"/>
+                  </Grid>
+                </StackPanel>
+              </Border>
+
+              <Border Classes="card">
+                <StackPanel>
+                  <TextBlock Text="Alerting &amp; auto-block" FontWeight="Bold" FontSize="15"/>
+                  <TextBlock Text="Get alerts off this machine, and stop block rules from piling up forever."
+                             Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12"
+                             Margin="0,4,0,14" TextWrapping="Wrap"/>
+
+                  <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,14">
+                    <StackPanel Margin="0,0,16,0">
+                      <TextBlock Text="Webhook alerts" FontWeight="Bold" FontSize="13"/>
+                      <TextBlock Text="POST Critical threats to a webhook URL — ntfy, Slack, and Discord formats are detected automatically; anything else receives generic JSON. Leave empty to disable."
+                                 Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11"
+                                 Margin="0,2,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <TextBox Grid.Column="1" Width="280" VerticalAlignment="Center"
+                             Text="{Binding WebhookUrl}" Watermark="https://ntfy.sh/your-topic"/>
+                  </Grid>
+
+                  <Grid ColumnDefinitions="*,Auto">
+                    <StackPanel Margin="0,0,16,0">
+                      <TextBlock Text="Auto-block expiry" FontWeight="Bold" FontSize="13"/>
+                      <TextBlock Text="Automatically remove auto-created block rules after this long. Cleanup happens silently when possible (root / cached sudo), otherwise at the next firewall change. Manual blocks are always permanent."
+                                 Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11"
+                                 Margin="0,2,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <ComboBox Grid.Column="1" Width="180" VerticalAlignment="Center"
+                              ItemsSource="{Binding AutoBlockExpiryOptions}"
+                              SelectedItem="{Binding SelectedAutoBlockExpiry}"/>
+                  </Grid>
+                </StackPanel>
+              </Border>
+
+              <Border Classes="card">
+                <StackPanel>
                   <TextBlock Text="Allowlist" FontWeight="Bold" FontSize="15"/>
                   <TextBlock Text="Known-good hosts that are never blocked."
                              Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12"
