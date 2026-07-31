@@ -1,6 +1,6 @@
 # Network Sentinel (macOS)
 
-Native **macOS** desktop app for **live network monitoring**, **remote peer tracking**, **break-in heuristics**, and **host firewall blocking** — with a modern dark Avalonia UI.
+Native **macOS** desktop app for **live network monitoring**, **remote peer tracking**, **break-in heuristics**, and **host firewall blocking** — with a modern dark Avalonia UI sharing a palette with the iOS app.
 
 > Awareness / monitoring tooling — not a full IDS/IPS replacement.
 
@@ -237,6 +237,7 @@ PF details:
 | `Services/AppSettings.cs` / `AppPaths.cs` | Application Support + JSON settings |
 | `ViewModels/MainViewModel.cs` | UI state, commands, auto-block wiring, Settings view |
 | `MainWindow.axaml` | Avalonia dashboard UI |
+| `Themes/Colors.axaml` | Palette ported from `NetworkSentinel-iOS/Theme.swift`, shared with the web console |
 | `Tui/TuiApp.cs` | Spectre.Console terminal UI (`--tui`) |
 | `Web/WebApp.cs` / `WebAuthStore.cs` | Headless browser console (`--web`) + master-password auth |
 | `Program.cs` | Entry point; GUI / TUI / web routing, crash log |
