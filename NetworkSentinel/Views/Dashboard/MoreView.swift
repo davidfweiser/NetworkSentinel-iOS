@@ -62,7 +62,7 @@ struct MoreView: View {
                         get: { model.criticalAlertsEnabled },
                         set: { model.criticalAlertsEnabled = $0 }
                     )) {
-                        Label("Critical alerts", systemImage: "bell.badge.fill")
+                        Label("Critical alerts on this device", systemImage: "bell.badge.fill")
                     }
                     .listRowBackground(NSTheme.card)
                     .tint(NSTheme.danger)

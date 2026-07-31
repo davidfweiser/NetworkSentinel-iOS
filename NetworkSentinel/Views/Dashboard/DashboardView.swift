@@ -301,6 +301,15 @@ struct DashboardView: View {
                             isOn: settings?.probeLogEnabled ?? false
                         ) { await model.setProbeLog($0) }
                     }
+                    // Web 0.3.5+ — Critical warnings on the server's own console.
+                    if settings?.criticalAlertsEnabled != nil {
+                        Divider().overlay(NSTheme.border)
+                        settingToggle(
+                            title: "Critical alerts on server",
+                            subtitle: "Desktop notification and web-console tab badge on the server itself. This iPhone's alerts are in More → Alerts.",
+                            isOn: settings?.criticalAlertsEnabled ?? true
+                        ) { await model.setServerCriticalAlerts($0) }
+                    }
                 }
                 .padding(.horizontal, 4)
                 .padding(.vertical, 2)

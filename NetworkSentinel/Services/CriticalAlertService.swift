@@ -7,17 +7,31 @@ final class CriticalAlertService {
     static let shared = CriticalAlertService()
 
     private let defaultsKey = "networksentinel.seenCriticalThreatIds"
+    private let knownServersKey = "networksentinel.primedServerIds"
+
+    /// Threats already notified about, kept across launches. `seenOrder` is the same set
+    /// in insertion order so trimming drops the oldest rather than an arbitrary 500.
     private var seenIds: Set<String>
-    private var primedServers: Set<String> = []
+    private var seenOrder: [String]
+    /// Servers a first snapshot has already been taken of, kept across launches. A server
+    /// listed here has history, so a cold start catches up on it instead of going quiet.
+    private var knownServers: Set<String>
+    /// Servers primed during this launch — the once-per-launch guard.
+    private var primedThisLaunch: Set<String> = []
+
+    /// How far back a cold start replays Criticals it never notified about. Long enough to
+    /// cover a night asleep, short enough that opening the app after a week does not
+    /// resurrect a stale incident as a fresh warning.
+    private let catchUpWindow: TimeInterval = 24 * 60 * 60
+    private let maxSeenIds = 500
 
     var notificationsAuthorized = false
 
     private init() {
-        if let arr = UserDefaults.standard.array(forKey: defaultsKey) as? [String] {
-            seenIds = Set(arr)
-        } else {
-            seenIds = []
-        }
+        let defaults = UserDefaults.standard
+        seenOrder = defaults.array(forKey: defaultsKey) as? [String] ?? []
+        seenIds = Set(seenOrder)
+        knownServers = Set(defaults.array(forKey: knownServersKey) as? [String] ?? [])
     }
 
     func requestPermission() async {
@@ -33,14 +47,22 @@ final class CriticalAlertService {
             || settings.authorizationStatus == .provisional
     }
 
-    /// First snapshot for a server: mark existing criticals as seen (no spam).
-    func prime(serverId: UUID, threats: [ThreatInfo]) {
+    /// First snapshot of a server this launch — decide what counts as history.
+    ///
+    /// First contact with a server: everything it already lists is backlog, and none of it
+    /// is worth a notification. Every launch after that: a Critical this app never saw
+    /// (it landed while the app was force-quit, or between background wake-ups) still
+    /// alerts, provided it is recent. Older ones are marked seen quietly.
+    func prime(serverId: UUID, threats: [ThreatInfo], now: Date = .now) {
         let key = serverId.uuidString
-        guard !primedServers.contains(key) else { return }
-        primedServers.insert(key)
-        for t in criticalThreats(from: threats) {
-            seenIds.insert(threatKey(serverId: serverId, threat: t))
+        guard !primedThisLaunch.contains(key) else { return }
+        primedThisLaunch.insert(key)
+
+        let firstContact = !knownServers.contains(key)
+        for t in criticalThreats(from: threats) where firstContact || !isRecent(t, now: now) {
+            markSeen(threatKey(serverId: serverId, threat: t))
         }
+        knownServers.insert(key)
         persist()
     }
 
@@ -52,7 +74,7 @@ final class CriticalAlertService {
         for t in criticalThreats(from: threats) {
             let id = threatKey(serverId: serverId, threat: t)
             if !seenIds.contains(id) {
-                seenIds.insert(id)
+                markSeen(id)
                 fresh.append(t)
             }
         }
@@ -104,7 +126,7 @@ final class CriticalAlertService {
     }
 
     func resetPrime(for serverId: UUID) {
-        primedServers.remove(serverId.uuidString)
+        primedThisLaunch.remove(serverId.uuidString)
     }
 
     private func criticalThreats(from threats: [ThreatInfo]) -> [ThreatInfo] {
@@ -113,14 +135,63 @@ final class CriticalAlertService {
         }
     }
 
+    /// Whether a threat is recent enough for a cold start to still warn about it.
+    /// `ts` arrived in web 0.3.5; older servers send only `time` (`HH:mm:ss`), which
+    /// carries no date, so age is unknowable there and the quiet path wins.
+    private func isRecent(_ threat: ThreatInfo, now: Date) -> Bool {
+        guard let ts = threat.ts, let at = Self.parseTimestamp(ts) else { return false }
+        return now.timeIntervalSince(at) <= catchUpWindow
+    }
+
+    /// Parses the server's ISO-8601 `ts`. .NET's round-trip format carries 7 fractional
+    /// digits — more than ISO8601DateFormatter accepts — so retry against a 3-digit form.
+    static func parseTimestamp(_ raw: String) -> Date? {
+        if let d = isoWithFraction.date(from: raw) { return d }
+        if let d = isoPlain.date(from: raw) { return d }
+
+        // 2026-07-30T18:28:14.1234567-05:00 → 2026-07-30T18:28:14.123-05:00
+        guard let dot = raw.firstIndex(of: ".") else { return nil }
+        let afterDot = raw[raw.index(after: dot)...]
+        guard let endOfDigits = afterDot.firstIndex(where: { !$0.isNumber }) else { return nil }
+        let trimmed = String(raw[..<dot])
+            + "."
+            + String(afterDot[..<endOfDigits].prefix(3))
+            + String(afterDot[endOfDigits...])
+        return isoWithFraction.date(from: trimmed)
+    }
+
+    private static let isoWithFraction: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+
+    private static let isoPlain: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+
     private func threatKey(serverId: UUID, threat: ThreatInfo) -> String {
         "\(serverId.uuidString)|\(threat.id)"
     }
 
+    private func markSeen(_ id: String) {
+        guard seenIds.insert(id).inserted else { return }
+        seenOrder.append(id)
+    }
+
     private func persist() {
-        // Cap stored IDs so UserDefaults does not grow forever
-        let trimmed = Array(seenIds.suffix(500))
-        seenIds = Set(trimmed)
-        UserDefaults.standard.set(trimmed, forKey: defaultsKey)
+        // Cap stored IDs so UserDefaults does not grow forever. Evicting the oldest keeps
+        // recent threats reliably deduped — dropping arbitrary ones would let a Critical
+        // that is still on the server's list alert a second time.
+        if seenOrder.count > maxSeenIds {
+            let excess = seenOrder.count - maxSeenIds
+            seenIds.subtract(seenOrder.prefix(excess))
+            seenOrder.removeFirst(excess)
+        }
+        let defaults = UserDefaults.standard
+        defaults.set(seenOrder, forKey: defaultsKey)
+        defaults.set(Array(knownServers), forKey: knownServersKey)
     }
 }

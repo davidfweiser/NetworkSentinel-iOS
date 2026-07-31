@@ -42,6 +42,7 @@ final class AppModel {
     /// In-app critical alert (popup) awaiting user acknowledgment.
     var pendingCriticalAlert: CriticalAlertPayload?
     /// User preference: local notifications + in-app popups for Critical threats.
+    /// Device-only — the server's own `criticalAlertsEnabled` (web ≥ 0.3.5) is separate.
     var criticalAlertsEnabled: Bool {
         get { UserDefaults.standard.object(forKey: "networksentinel.criticalAlerts") as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: "networksentinel.criticalAlerts") }
@@ -561,6 +562,10 @@ final class AppModel {
     func setAuthLogMonitor(_ on: Bool) async { await setSetting("authLogMonitorEnabled", enabled: on) }
     /// Web 0.3.4+: firewall SYN logging to catch scans of closed ports. Needs elevation on the server.
     func setProbeLog(_ on: Bool) async { await setSetting("probeLogEnabled", enabled: on) }
+    /// Web 0.3.5+: Critical warnings on the server itself (desktop notification in the
+    /// GUI, tab badge + browser notification in the web console). Separate from this
+    /// device's notifications, which stay under `criticalAlertsEnabled`.
+    func setServerCriticalAlerts(_ on: Bool) async { await setSetting("criticalAlertsEnabled", enabled: on) }
     func setAllowlistRemoteFeed(_ on: Bool) async { await setSetting("allowlistUseRemoteFeed", enabled: on) }
     func setAutoBlockEnabled(_ on: Bool) async { await setSetting("autoBlockEnabled", enabled: on) }
 

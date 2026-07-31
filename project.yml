@@ -25,9 +25,12 @@ targets:
       - path: NetworkSentinel
         excludes:
           - "**/.DS_Store"
+          # Referenced via CODE_SIGN_ENTITLEMENTS; must not be copied into the bundle.
+          - "**/*.entitlements"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.davidfweiser.NetworkSentinel
+        CODE_SIGN_ENTITLEMENTS: NetworkSentinel/NetworkSentinel.entitlements
         PRODUCT_NAME: NetworkSentinel
         INFOPLIST_KEY_CFBundleDisplayName: Network Sentinel
         INFOPLIST_KEY_NSLocalNetworkUsageDescription: Network Sentinel connects to your Network Sentinel web servers on the local network.

@@ -95,6 +95,10 @@ struct SettingsInfo: Codable {
     let probeLogEnabled: Bool?
     /// Human-readable state of the probe-log watcher (rule installed, needs elevation, …).
     let probeLogStatus: String?
+    /// Server-side Critical warnings (desktop notification in the GUI, tab badge +
+    /// browser notification in the web console) — present on web ≥ 0.3.5.
+    /// Independent of this app's own notifications.
+    let criticalAlertsEnabled: Bool?
     let isMonitoring: Bool?
 }
 
@@ -157,7 +161,9 @@ struct HostInfo: Codable, Identifiable {
 struct ThreatInfo: Codable, Identifiable {
     var id: String {
         [
-            time,
+            // `ts` carries the date; `time` alone is HH:mm:ss and repeats every day,
+            // which would make yesterday's alert look like today's to the dedupe store.
+            ts ?? time,
             sourceIp,
             title,
             level,
@@ -166,6 +172,8 @@ struct ThreatInfo: Codable, Identifiable {
             method ?? ""
         ].joined(separator: "|")
     }
+    /// Full ISO-8601 timestamp — present on web ≥ 0.3.5. Older servers send only `time`.
+    let ts: String?
     let time: String
     let level: String
     let levelNum: Int?
