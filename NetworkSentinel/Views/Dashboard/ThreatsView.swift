@@ -51,7 +51,7 @@ struct ThreatsView: View {
                             ThreatRow(threat: t) {
                                 Task { await model.block(ip: t.sourceIp) }
                             }
-                            .listRowBackground(NSTheme.card)
+                            .listRowBackground(NSTheme.row)
                             .listRowSeparatorTint(NSTheme.border)
                         }
                     }
@@ -59,7 +59,7 @@ struct ThreatsView: View {
                     .scrollContentBackground(.hidden)
                 }
             }
-            .background(NSTheme.bg.ignoresSafeArea())
+            .background { AmbientField() }
             .navigationTitle("Threats")
             .searchable(text: $query, prompt: "IP, title, type")
             // Segmented filter must not live in the nav toolbar — on a phone it

@@ -39,7 +39,7 @@ struct HostsView: View {
                     List {
                         ForEach(hosts) { h in
                             HostRow(host: h)
-                                .listRowBackground(NSTheme.card)
+                                .listRowBackground(NSTheme.row)
                                 .listRowSeparatorTint(NSTheme.border)
                                 .swipeActions(edge: .trailing) {
                                     if h.blocked == true {
@@ -77,7 +77,7 @@ struct HostsView: View {
                     .scrollContentBackground(.hidden)
                 }
             }
-            .background(NSTheme.bg.ignoresSafeArea())
+            .background { AmbientField() }
             .navigationTitle("Hosts")
             .searchable(text: $query, prompt: "IP, name, geo")
             .toolbar {

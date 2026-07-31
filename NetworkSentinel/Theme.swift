@@ -1,83 +1,181 @@
 import SwiftUI
 
+// MARK: - Tokens
+
+/// The palette is a signal system, not decoration: every colour here means one thing about
+/// the network, and severity is what drives the app's tint. Calm reads cool and still,
+/// trouble warms the whole surface.
 enum NSTheme {
-    static let bg = Color(red: 0.06, green: 0.08, blue: 0.12)
-    static let card = Color(red: 0.10, green: 0.13, blue: 0.19)
-    static let cardElevated = Color(red: 0.13, green: 0.16, blue: 0.24)
-    static let border = Color.white.opacity(0.08)
-    static let muted = Color(red: 0.55, green: 0.60, blue: 0.70)
-    static let text = Color(red: 0.93, green: 0.95, blue: 0.98)
-    static let accent = Color(red: 0.29, green: 0.62, blue: 0.98)
-    static let accentSoft = Color(red: 0.29, green: 0.62, blue: 0.98).opacity(0.15)
+    /// Deep slate rather than navy — keeps the glass panels from turning blue.
+    static let ink = Color(red: 0.039, green: 0.055, blue: 0.078)
+    static let text = Color(red: 0.929, green: 0.945, blue: 0.969)
+    static let muted = Color(red: 0.541, green: 0.580, blue: 0.651)
+    /// Secondary text that sits on a tinted glass panel. Plain `muted` loses too much
+    /// contrast once the surface behind it is carrying a severity colour.
+    static let mutedOnTint = Color(red: 0.780, green: 0.800, blue: 0.835)
+    static let border = Color.white.opacity(0.10)
+
+    /// Interactive blue — controls, links, anything you can press.
+    static let accent = Color(red: 0.290, green: 0.620, blue: 1.0)
+    /// "Everything is fine" teal. Reserved for healthy state, never for chrome.
+    static let signal = Color(red: 0.231, green: 0.784, blue: 0.706)
     static let success = Color(red: 0.30, green: 0.82, blue: 0.55)
-    static let warning = Color(red: 0.95, green: 0.75, blue: 0.25)
-    static let danger = Color(red: 0.95, green: 0.30, blue: 0.40)
+    static let warning = Color(red: 0.961, green: 0.725, blue: 0.231)
+    static let danger = Color(red: 1.0, green: 0.365, blue: 0.471)
     static let cyan = Color(red: 0.30, green: 0.85, blue: 0.90)
-    /// Threat marker on the activity chart — the web console's and desktop GUI's #FF5D78.
+    /// Threat marker on the activity chart — matches the web console and desktop GUI.
     static let threatMarker = Color(red: 1.0, green: 0.365, blue: 0.471)
 
-    static let gradient = LinearGradient(
-        colors: [
-            Color(red: 0.08, green: 0.12, blue: 0.22),
-            Color(red: 0.05, green: 0.07, blue: 0.11)
-        ],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-    )
+    /// Base fill. Glass and list rows sit on the ambient field, so this is only the floor.
+    static let bg = ink
+    /// List rows stay translucent rather than glass — glass belongs to floating chrome, and
+    /// a hundred glass rows in a scroll view is both wrong and slow.
+    static let row = Color.white.opacity(0.05)
+    static let card = Color(red: 0.086, green: 0.106, blue: 0.149)
+    static let cardElevated = Color(red: 0.118, green: 0.145, blue: 0.204)
+    static let accentSoft = accent.opacity(0.15)
 }
 
-struct CardModifier: ViewModifier {
-    var padding: CGFloat = 16
+extension Font {
+    /// Instrument readout. Compressed width so a five-digit connection count still fits a
+    /// tile without shrinking, and so the numerals read as measurements rather than prose.
+    static func readout(_ size: CGFloat, weight: Font.Weight = .semibold) -> Font {
+        .system(size: size, weight: weight).width(.compressed)
+    }
+
+    /// Small tracked label above a value or section.
+    static var eyebrow: Font { .system(size: 11, weight: .semibold) }
+}
+
+// MARK: - Ambient field
+
+/// The background is the data. A cool wash at rest, brightening with connection volume, and
+/// breathing in the severity colour once something is actually wrong — so the state of the
+/// network is readable from across the room, before you focus on a single number.
+///
+/// Motion only runs while a High or Critical threat is live. At rest this is a static
+/// gradient, which keeps a 2.5s poll loop from also paying for a 20fps animation.
+struct AmbientField: View {
+    var severity: ThreatSeverity = .none
+    /// 0…1, current connections as a share of the window's peak.
+    var load: Double = 0
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var alarming: Bool { severity >= .high }
+
+    var body: some View {
+        ZStack {
+            NSTheme.ink
+
+            RadialGradient(
+                colors: [NSTheme.signal.opacity(0.14 + 0.10 * load), .clear],
+                center: UnitPoint(x: 0.12, y: 0.02),
+                startRadius: 0,
+                endRadius: 520
+            )
+            RadialGradient(
+                colors: [NSTheme.accent.opacity(0.10 + 0.08 * load), .clear],
+                center: UnitPoint(x: 0.96, y: 0.30),
+                startRadius: 0,
+                endRadius: 460
+            )
+
+            if alarming { alarmWash }
+        }
+        .ignoresSafeArea()
+        .animation(.easeInOut(duration: 1.2), value: load)
+        .animation(.easeInOut(duration: 0.9), value: severity)
+    }
+
+    @ViewBuilder
+    private var alarmWash: some View {
+        let tint = severity.color
+        if reduceMotion {
+            RadialGradient(
+                colors: [tint.opacity(0.24), .clear],
+                center: UnitPoint(x: 0.5, y: 1.04),
+                startRadius: 0,
+                endRadius: 600
+            )
+        } else {
+            TimelineView(.animation(minimumInterval: 1.0 / 20.0)) { ctx in
+                // ~4.5s breath — slow enough to read as alarm, not as a loading spinner.
+                let t = ctx.date.timeIntervalSinceReferenceDate
+                let phase = (sin(t * 2 * .pi / 4.5) + 1) / 2
+                RadialGradient(
+                    colors: [tint.opacity(0.13 + 0.17 * phase), .clear],
+                    center: UnitPoint(x: 0.5, y: 1.04),
+                    startRadius: 0,
+                    endRadius: 500 + 140 * phase
+                )
+            }
+        }
+    }
+}
+
+// MARK: - Surfaces
+
+struct GlassCardModifier: ViewModifier {
+    var padding: CGFloat
+    var tint: Color?
 
     func body(content: Content) -> some View {
         content
             .padding(padding)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(NSTheme.card)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(NSTheme.border, lineWidth: 1)
-                    )
+            .glassEffect(
+                tint.map { Glass.regular.tint($0.opacity(0.30)) } ?? .regular,
+                in: .rect(cornerRadius: 22)
             )
     }
 }
 
 extension View {
-    func nsCard(padding: CGFloat = 16) -> some View {
-        modifier(CardModifier(padding: padding))
+    func nsCard(padding: CGFloat = 16, tint: Color? = nil) -> some View {
+        modifier(GlassCardModifier(padding: padding, tint: tint))
+    }
+
+    /// Section label: uppercase, tracked, muted. Used above cards and inside them.
+    func nsEyebrow() -> some View {
+        self.font(.eyebrow)
+            .textCase(.uppercase)
+            .tracking(0.8)
+            .foregroundStyle(NSTheme.muted)
     }
 }
 
+// MARK: - Components
+
 struct StatTile: View {
     let title: String
-    let value: String
+    let value: Int
     let icon: String
     var tint: Color = NSTheme.accent
     var subtitle: String? = nil
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Image(systemName: icon)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(tint)
-                    .frame(width: 28, height: 28)
-                    .background(tint.opacity(0.15), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                Spacer()
-            }
-            Text(value)
-                .font(.system(size: 26, weight: .bold, design: .rounded))
+        VStack(alignment: .leading, spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(tint)
+                .frame(width: 26, height: 26)
+                .background(tint.opacity(0.16), in: .rect(cornerRadius: 8))
+
+            Text("\(value)")
+                .font(.readout(34))
                 .foregroundStyle(NSTheme.text)
-                .minimumScaleFactor(0.6)
+                .contentTransition(.numericText(value: Double(value)))
+                .animation(.snappy(duration: 0.35), value: value)
                 .lineLimit(1)
+                .minimumScaleFactor(0.6)
+
             Text(title)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(NSTheme.muted)
+                .nsEyebrow()
+
             if let subtitle {
                 Text(subtitle)
                     .font(.caption2)
-                    .foregroundStyle(NSTheme.muted.opacity(0.8))
+                    .foregroundStyle(tint.opacity(0.9))
                     .lineLimit(1)
             }
         }
@@ -96,12 +194,15 @@ struct SeverityBadge: View {
 
     var body: some View {
         Text(level.uppercased())
-            .font(.system(size: 10, weight: .bold, design: .rounded))
-            .tracking(0.5)
+            .font(.system(size: 10, weight: .bold))
+            .tracking(0.6)
             .foregroundStyle(severity.color)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .background(severity.color.opacity(0.15), in: Capsule())
+            .background(severity.color.opacity(0.16), in: .capsule)
+            .overlay(
+                Capsule().stroke(severity.color.opacity(0.35), lineWidth: 0.5)
+            )
     }
 }
 
@@ -113,7 +214,7 @@ struct EmptyStateView: View {
     var body: some View {
         VStack(spacing: 14) {
             Image(systemName: icon)
-                .font(.system(size: 40, weight: .light))
+                .font(.system(size: 38, weight: .light))
                 .foregroundStyle(NSTheme.muted)
             Text(title)
                 .font(.headline)
@@ -126,95 +227,5 @@ struct EmptyStateView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.vertical, 48)
-    }
-}
-
-/// Connection-count area/line with a translucent red column on every sample that
-/// carried a threat — the same reading as the web console's inline-SVG chart and the
-/// desktop GUI's Sparkline control (same #FF5D78 marker, 4pt wide, full plot height).
-struct ActivitySparkline: View {
-    let points: [ActivityPoint]
-
-    /// Matches the web chart's padT / padB so the line never clips against the card.
-    private let padTop: CGFloat = 6
-    private let padBottom: CGFloat = 3
-
-    var body: some View {
-        GeometryReader { geo in
-            let values = points.map { Double($0.connections ?? 0) }
-            let maxV = max(values.max() ?? 1, 1)
-            let w = geo.size.width
-            let h = geo.size.height
-            let innerH = max(h - padTop - padBottom, 1)
-            let n = max(values.count, 1)
-
-            let xPos: (Int) -> CGFloat = { i in
-                n == 1 ? w / 2 : CGFloat(i) / CGFloat(n - 1) * w
-            }
-            let yPos: (Double) -> CGFloat = { v in
-                padTop + innerH * (1 - CGFloat(v / maxV))
-            }
-
-            ZStack {
-                // Grid lines at 25 / 50 / 75%, as on the web chart.
-                Path { path in
-                    for f in [0.25, 0.5, 0.75] {
-                        let y = padTop + innerH * CGFloat(f)
-                        path.move(to: CGPoint(x: 0, y: y))
-                        path.addLine(to: CGPoint(x: w, y: y))
-                    }
-                }
-                .stroke(Color.white.opacity(0.07), lineWidth: 1)
-
-                // Fill under curve
-                Path { path in
-                    guard !values.isEmpty else { return }
-                    path.move(to: CGPoint(x: xPos(0), y: h - padBottom))
-                    for (i, v) in values.enumerated() {
-                        path.addLine(to: CGPoint(x: xPos(i), y: yPos(v)))
-                    }
-                    path.addLine(to: CGPoint(x: xPos(values.count - 1), y: h - padBottom))
-                    path.closeSubpath()
-                }
-                .fill(
-                    LinearGradient(
-                        colors: [NSTheme.accent.opacity(0.25), NSTheme.accent.opacity(0.02)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-
-                // Threat markers sit under the line so a spike never hides the trend.
-                ForEach(threatMarkerIndices, id: \.self) { i in
-                    RoundedRectangle(cornerRadius: 2, style: .continuous)
-                        .fill(NSTheme.threatMarker.opacity(0.30))
-                        .frame(width: 4, height: innerH)
-                        .position(x: xPos(i), y: padTop + innerH / 2)
-                }
-
-                Path { path in
-                    for (i, v) in values.enumerated() {
-                        let p = CGPoint(x: xPos(i), y: yPos(v))
-                        if i == 0 { path.move(to: p) } else { path.addLine(to: p) }
-                    }
-                }
-                .stroke(
-                    LinearGradient(colors: [NSTheme.accent, NSTheme.cyan], startPoint: .leading, endPoint: .trailing),
-                    style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
-                )
-
-                // Current-value dot on the newest sample.
-                if let lastValue = values.last {
-                    Circle()
-                        .fill(NSTheme.cyan)
-                        .frame(width: 7, height: 7)
-                        .position(x: xPos(values.count - 1), y: yPos(lastValue))
-                }
-            }
-        }
-    }
-
-    private var threatMarkerIndices: [Int] {
-        points.enumerated().compactMap { (i, p) in (p.threats ?? 0) > 0 ? i : nil }
     }
 }

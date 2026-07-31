@@ -70,7 +70,7 @@ struct OnboardingView: View {
                         .padding(.bottom, 32)
                 }
             }
-            .background(NSTheme.gradient.ignoresSafeArea())
+            .background { AmbientField() }
             .navigationBarHidden(true)
         }
     }

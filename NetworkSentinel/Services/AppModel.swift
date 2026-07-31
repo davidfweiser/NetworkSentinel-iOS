@@ -56,6 +56,38 @@ final class AppModel {
 
     var server: ServerProfile? { store.selectedServer }
 
+    // MARK: - Derived state for the UI
+
+    /// Highest severity the server is currently reporting. Drives the app's tint and the
+    /// ambient background, so the whole surface reads as calm or alarmed at a glance.
+    var liveSeverity: ThreatSeverity {
+        (state?.threats ?? []).reduce(ThreatSeverity.none) {
+            Swift.max($0, ThreatSeverity.from(level: $1.level, levelNum: $1.levelNum))
+        }
+    }
+
+    /// Current connections as a share of the window's peak, 0…1.
+    var activityLoad: Double {
+        let values = (state?.activity ?? []).map { $0.connections ?? 0 }
+        guard let peak = values.max(), peak > 0, let now = values.last else { return 0 }
+        return min(Double(now) / Double(peak), 1)
+    }
+
+    /// The one thing most worth acting on right now, if anything is. Newest High+ threat.
+    var attentionThreat: ThreatInfo? {
+        (state?.threats ?? []).first {
+            ThreatSeverity.from(level: $0.level, levelNum: $0.levelNum) >= .high
+        }
+    }
+
+    /// How many other High+ threats are queued behind `attentionThreat`.
+    var attentionBacklog: Int {
+        let n = (state?.threats ?? []).count {
+            ThreatSeverity.from(level: $0.level, levelNum: $0.levelNum) >= .high
+        }
+        return max(0, n - 1)
+    }
+
     // MARK: - Lifecycle
 
     func onAppear() {

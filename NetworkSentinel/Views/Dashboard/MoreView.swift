@@ -31,14 +31,14 @@ struct MoreView: View {
                                 .foregroundStyle(NSTheme.accent)
                         }
                     }
-                    .listRowBackground(NSTheme.card)
+                    .listRowBackground(NSTheme.row)
 
                     Button {
                         showEditServer = true
                     } label: {
                         Label("Edit this server", systemImage: "pencil")
                     }
-                    .listRowBackground(NSTheme.card)
+                    .listRowBackground(NSTheme.row)
                     .disabled(model.server == nil)
 
                     Button {
@@ -46,7 +46,7 @@ struct MoreView: View {
                     } label: {
                         Label("Change master password", systemImage: "key.horizontal")
                     }
-                    .listRowBackground(NSTheme.card)
+                    .listRowBackground(NSTheme.row)
                     .disabled(model.server == nil)
 
                     Button(role: .destructive) {
@@ -54,7 +54,7 @@ struct MoreView: View {
                     } label: {
                         Label("Sign out", systemImage: "rectangle.portrait.and.arrow.right")
                     }
-                    .listRowBackground(NSTheme.card)
+                    .listRowBackground(NSTheme.row)
                 }
 
                 Section {
@@ -64,7 +64,7 @@ struct MoreView: View {
                     )) {
                         Label("Critical alerts on this device", systemImage: "bell.badge.fill")
                     }
-                    .listRowBackground(NSTheme.card)
+                    .listRowBackground(NSTheme.row)
                     .tint(NSTheme.danger)
 
                     Button {
@@ -72,14 +72,14 @@ struct MoreView: View {
                     } label: {
                         Label("Notification permission", systemImage: "bell")
                     }
-                    .listRowBackground(NSTheme.card)
+                    .listRowBackground(NSTheme.row)
 
                     if let at = model.lastBackgroundPollAt {
                         LabeledContent("Last background poll") {
                             Text(at, style: .relative)
                                 .foregroundStyle(NSTheme.muted)
                         }
-                        .listRowBackground(NSTheme.card)
+                        .listRowBackground(NSTheme.row)
                     }
                 } header: {
                     Text("Alerts")
@@ -118,7 +118,7 @@ struct MoreView: View {
                                 .font(.caption.weight(.bold))
                                 .foregroundStyle(NSTheme.danger)
                             }
-                            .listRowBackground(NSTheme.card)
+                            .listRowBackground(NSTheme.row)
                             .swipeActions {
                                 Button {
                                     Task {
@@ -137,7 +137,7 @@ struct MoreView: View {
                     } else {
                         Text("No listeners")
                             .foregroundStyle(NSTheme.muted)
-                            .listRowBackground(NSTheme.card)
+                            .listRowBackground(NSTheme.row)
                     }
 
                     Button {
@@ -146,7 +146,7 @@ struct MoreView: View {
                     } label: {
                         Label("Block port…", systemImage: "plus.circle")
                     }
-                    .listRowBackground(NSTheme.card)
+                    .listRowBackground(NSTheme.row)
                 } header: {
                     Text("Ports")
                 } footer: {
@@ -197,7 +197,7 @@ struct MoreView: View {
                                         .lineLimit(2)
                                 }
                             }
-                            .listRowBackground(NSTheme.card)
+                            .listRowBackground(NSTheme.row)
                             .swipeActions(edge: .trailing, allowsFullSwipe: !r.isProtectedRule) {
                                 if !r.isProtectedRule {
                                     Button(role: .destructive) {
@@ -220,7 +220,7 @@ struct MoreView: View {
                     } else {
                         Text("No managed firewall rules")
                             .foregroundStyle(NSTheme.muted)
-                            .listRowBackground(NSTheme.card)
+                            .listRowBackground(NSTheme.row)
                     }
 
                     Button {
@@ -228,14 +228,14 @@ struct MoreView: View {
                     } label: {
                         Label("Authorize firewall", systemImage: "lock.open")
                     }
-                    .listRowBackground(NSTheme.card)
+                    .listRowBackground(NSTheme.row)
 
                     Button(role: .destructive) {
                         confirmRemoveAll = true
                     } label: {
                         Label("Remove all managed rules", systemImage: "trash")
                     }
-                    .listRowBackground(NSTheme.card)
+                    .listRowBackground(NSTheme.row)
                 } header: {
                     Text("Firewall rules")
                 } footer: {
@@ -265,7 +265,7 @@ struct MoreView: View {
                                     }
                                 }
                             }
-                            .listRowBackground(NSTheme.card)
+                            .listRowBackground(NSTheme.row)
                             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                 Button(role: .destructive) {
                                     Task { await model.removeAllowlist(e.value, kind: e.kind) }
@@ -277,7 +277,7 @@ struct MoreView: View {
                     } else {
                         Text("Allowlist empty")
                             .foregroundStyle(NSTheme.muted)
-                            .listRowBackground(NSTheme.card)
+                            .listRowBackground(NSTheme.row)
                     }
 
                     Button {
@@ -285,21 +285,21 @@ struct MoreView: View {
                     } label: {
                         Label("Add domain or IP", systemImage: "plus.circle")
                     }
-                    .listRowBackground(NSTheme.card)
+                    .listRowBackground(NSTheme.row)
 
                     Button {
                         Task { await model.refreshAllowlist() }
                     } label: {
                         Label("Refresh allowlist", systemImage: "arrow.triangle.2.circlepath")
                     }
-                    .listRowBackground(NSTheme.card)
+                    .listRowBackground(NSTheme.row)
 
                     Button {
                         Task { await model.restoreAllowlisted() }
                     } label: {
                         Label("Restore good sites", systemImage: "arrow.uturn.backward.circle")
                     }
-                    .listRowBackground(NSTheme.card)
+                    .listRowBackground(NSTheme.row)
                 } header: {
                     Text("Allowlist")
                 } footer: {
@@ -310,15 +310,15 @@ struct MoreView: View {
 
                 Section("About") {
                     LabeledContent("App", value: "Network Sentinel iOS")
-                        .listRowBackground(NSTheme.card)
+                        .listRowBackground(NSTheme.row)
                     LabeledContent("Server version", value: model.state?.version ?? "—")
-                        .listRowBackground(NSTheme.card)
+                        .listRowBackground(NSTheme.row)
                     LabeledContent("Poll interval", value: "\(Int(model.pollInterval * 10) / 10)s")
-                        .listRowBackground(NSTheme.card)
+                        .listRowBackground(NSTheme.row)
                 }
             }
             .scrollContentBackground(.hidden)
-            .background(NSTheme.bg.ignoresSafeArea())
+            .background { AmbientField() }
             .navigationTitle("More")
             .sheet(isPresented: $showServers) {
                 NavigationStack {

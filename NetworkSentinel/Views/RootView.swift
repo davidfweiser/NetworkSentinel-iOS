@@ -20,7 +20,7 @@ struct RootView: View {
                 }
             }
         }
-        .background(NSTheme.bg.ignoresSafeArea())
+        .background { AmbientField() }
         .task {
             model.onAppear()
         }
@@ -30,32 +30,88 @@ struct RootView: View {
         .animation(.easeInOut(duration: 0.25), value: model.store.servers.count)
         .animation(.easeInOut(duration: 0.2), value: model.authPhase)
         .animation(.easeInOut(duration: 0.2), value: model.isAuthenticated)
-        .alert(
-            "Critical threat",
-            isPresented: Binding(
-                get: { model.pendingCriticalAlert != nil },
-                set: { if !$0 { model.dismissCriticalAlert() } }
-            )
-        ) {
+        // A Critical arriving in the foreground used to open a modal alert, which covered
+        // the Dashboard card offering the same Block button. A banner says the same thing
+        // without taking the screen hostage, and the card stays there after it goes.
+        .overlay(alignment: .top) {
             if let alert = model.pendingCriticalAlert {
-                Button("Block \(alert.threat.sourceIp)", role: .destructive) {
-                    let ip = alert.threat.sourceIp
-                    model.dismissCriticalAlert()
-                    Task { await model.block(ip: ip) }
-                }
-                Button("Dismiss", role: .cancel) {
-                    model.dismissCriticalAlert()
-                }
-            } else {
-                Button("OK", role: .cancel) {
-                    model.dismissCriticalAlert()
-                }
+                CriticalBanner(
+                    payload: alert,
+                    onBlock: {
+                        let ip = alert.threat.sourceIp
+                        model.dismissCriticalAlert()
+                        Task { await model.block(ip: ip) }
+                    },
+                    onDismiss: { model.dismissCriticalAlert() }
+                )
+                .padding(.horizontal, 12)
+                .transition(.move(edge: .top).combined(with: .opacity))
             }
-        } message: {
-            if let alert = model.pendingCriticalAlert {
-                let extra = alert.extraCount > 0 ? "\n(+\(alert.extraCount) more)" : ""
-                Text("\(alert.serverName)\n\(alert.threat.title)\n\(alert.threat.sourceIp)\(extra)")
+        }
+        .animation(.spring(response: 0.42, dampingFraction: 0.85), value: model.pendingCriticalAlert)
+    }
+}
+
+/// Foreground warning for a new Critical threat. Non-blocking: it floats over whichever
+/// tab you are on, offers the one action worth taking, and steps aside on its own.
+struct CriticalBanner: View {
+    let payload: CriticalAlertPayload
+    var onBlock: () -> Void
+    var onDismiss: () -> Void
+
+    private var severity: ThreatSeverity {
+        ThreatSeverity.from(level: payload.threat.level, levelNum: payload.threat.levelNum)
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Circle()
+                .fill(severity.color)
+                .frame(width: 8, height: 8)
+                .padding(.top, 6)
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text("Critical").nsEyebrow()
+                    Text(payload.serverName)
+                        .font(.system(size: 11))
+                        .foregroundStyle(NSTheme.muted)
+                    if payload.extraCount > 0 {
+                        Text("+\(payload.extraCount)")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(severity.color)
+                    }
+                }
+                Text(payload.threat.title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(NSTheme.text)
+                    .lineLimit(2)
+                Text(payload.threat.sourceIp)
+                    .font(.system(size: 11).monospaced())
+                    .foregroundStyle(NSTheme.cyan)
             }
+
+            Spacer(minLength: 4)
+
+            VStack(spacing: 6) {
+                Button("Block", action: onBlock)
+                    .font(.caption.weight(.bold))
+                    .buttonStyle(.glassProminent)
+                    .tint(severity.color)
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(NSTheme.muted)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(14)
+        .glassEffect(Glass.regular.tint(severity.color.opacity(0.22)), in: .rect(cornerRadius: 20))
+        .task(id: payload.id) {
+            // Long enough to read and act on, short enough not to sit over the UI.
+            try? await Task.sleep(for: .seconds(8))
+            onDismiss()
         }
     }
 }
@@ -73,7 +129,7 @@ struct AuthLoadingView: View {
                 .foregroundStyle(NSTheme.muted)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(NSTheme.gradient.ignoresSafeArea())
+        .background { AmbientField() }
     }
 }
 
@@ -136,7 +192,7 @@ struct UnreachableView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(NSTheme.gradient.ignoresSafeArea())
+            .background { AmbientField() }
             .sheet(isPresented: $showServers) {
                 NavigationStack {
                     ServersListView()
@@ -163,29 +219,39 @@ struct MainTabView: View {
     @State private var tab = 0
     @State private var showServers = false
 
+    /// Chrome follows the network: interactive blue when things are calm, the severity
+    /// colour once a High or Critical threat is live.
+    private var chromeTint: Color {
+        model.liveSeverity >= .high ? model.liveSeverity.color : NSTheme.accent
+    }
+
     var body: some View {
         TabView(selection: $tab) {
-            DashboardView(showServers: $showServers)
-                .tabItem { Label("Dashboard", systemImage: "gauge.with.dots.needle.67percent") }
-                .tag(0)
+            Tab("Dashboard", systemImage: "gauge.with.dots.needle.67percent", value: 0) {
+                DashboardView(showServers: $showServers)
+            }
 
-            ThreatsView()
-                .tabItem { Label("Threats", systemImage: "exclamationmark.shield.fill") }
-                .tag(1)
+            Tab("Threats", systemImage: "exclamationmark.shield.fill", value: 1) {
+                ThreatsView()
+            }
+            .badge(model.attentionThreat == nil ? 0 : model.attentionBacklog + 1)
 
-            HostsView()
-                .tabItem { Label("Hosts", systemImage: "network") }
-                .tag(2)
+            Tab("Hosts", systemImage: "network", value: 2) {
+                HostsView()
+            }
 
-            ConnectionsView()
-                .tabItem { Label("Connections", systemImage: "arrow.left.arrow.right") }
-                .tag(3)
+            Tab("Connections", systemImage: "arrow.left.arrow.right", value: 3) {
+                ConnectionsView()
+            }
 
-            MoreView()
-                .tabItem { Label("More", systemImage: "ellipsis.circle") }
-                .tag(4)
+            Tab("More", systemImage: "ellipsis.circle", value: 4) {
+                MoreView()
+            }
         }
-        .tint(NSTheme.accent)
+        // Reading a dense table on a phone is worth more than a permanent tab bar.
+        .tabBarMinimizeBehavior(.onScrollDown)
+        .tint(chromeTint)
+        .animation(.easeInOut(duration: 0.5), value: chromeTint)
         .sheet(isPresented: $showServers) {
             NavigationStack {
                 ServersListView()
@@ -203,9 +269,9 @@ struct MainTabView: View {
                 Text(banner)
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(NSTheme.text)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(.ultraThinMaterial, in: Capsule())
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 11)
+                    .glassEffect(.regular, in: .capsule)
                     .padding(.top, 8)
                     .transition(.move(edge: .top).combined(with: .opacity))
                     .onAppear {

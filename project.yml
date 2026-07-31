@@ -2,8 +2,8 @@ name: NetworkSentinel
 options:
   bundleIdPrefix: com.davidfweiser
   deploymentTarget:
-    iOS: "17.0"
-  xcodeVersion: "15.0"
+    iOS: "26.0"
+  xcodeVersion: "26.0"
   createIntermediateGroups: true
   groupSortPosition: top
 settings:

@@ -52,7 +52,7 @@ struct ServersListView: View {
                         .buttonStyle(.plain)
                         .accessibilityLabel("Edit \(server.name)")
                     }
-                    .listRowBackground(NSTheme.card)
+                    .listRowBackground(NSTheme.row)
                     .contextMenu {
                         Button {
                             editProfile = server
@@ -97,7 +97,7 @@ struct ServersListView: View {
                 } label: {
                     Label("Add server", systemImage: "plus.circle.fill")
                 }
-                .listRowBackground(NSTheme.card)
+                .listRowBackground(NSTheme.row)
             }
         }
         .scrollContentBackground(.hidden)

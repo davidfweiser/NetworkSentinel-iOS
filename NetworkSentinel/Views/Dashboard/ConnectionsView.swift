@@ -38,7 +38,7 @@ struct ConnectionsView: View {
                                     Task { await model.block(ip: ip) }
                                 }
                             }
-                            .listRowBackground(NSTheme.card)
+                            .listRowBackground(NSTheme.row)
                             .listRowSeparatorTint(NSTheme.border)
                         }
                     }
@@ -46,7 +46,7 @@ struct ConnectionsView: View {
                     .scrollContentBackground(.hidden)
                 }
             }
-            .background(NSTheme.bg.ignoresSafeArea())
+            .background { AmbientField() }
             .navigationTitle("Connections")
             .searchable(text: $query, prompt: "Process, IP, state")
             .toolbar {

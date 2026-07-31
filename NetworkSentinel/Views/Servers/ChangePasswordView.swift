@@ -59,7 +59,7 @@ struct ChangePasswordView: View {
                 }
                 .padding(.vertical, 24)
             }
-            .background(NSTheme.gradient.ignoresSafeArea())
+            .background { AmbientField() }
             .navigationTitle("Master password")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

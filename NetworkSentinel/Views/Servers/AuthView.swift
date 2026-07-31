@@ -128,7 +128,7 @@ struct AuthView: View {
                 }
                 .padding(.vertical, 24)
             }
-            .background(NSTheme.gradient.ignoresSafeArea())
+            .background { AmbientField() }
             .navigationTitle("Network Sentinel")
             .navigationBarTitleDisplayMode(.inline)
             .onAppear {

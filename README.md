@@ -9,7 +9,7 @@ Connect to one or more hosts running the headless web UI (`-w` / `--web`), sign 
 | Area | What you get |
 |------|----------------|
 | **Multi-server** | Add/edit/delete servers; switch between home, lab, VPS, etc. |
-| **Dashboard** | Live stats, activity sparkline, pause/resume, auto-block controls |
+| **Dashboard** | Needs-attention card with one-tap block, live stats, scrubbable activity chart, pause/resume and auto-block controls |
 | **Detection** | Toggle geo lookups, auth-log brute-force monitoring, closed-port scan detection, and the server's own Critical warnings, with its status text inline |
 | **Threats** | Severity filters, search, clear alerts, block source IP |
 | **Hosts** | Remote peers with geo/threat badges; swipe to block/unblock |
@@ -68,13 +68,39 @@ Background polling also needs Background App Refresh enabled (Settings → Netwo
 
 Treat this as a companion console, not a pager: it is not a substitute for alerting that runs on the server itself.
 
+## Design
+
+The interface is built on **Liquid Glass** (iOS 26), and its one organising idea is that
+severity drives the whole surface rather than a single badge:
+
+- **The background is the data.** A cool wash at rest that brightens with connection volume,
+  and breathes in the severity colour once a High or Critical threat is live — so you can
+  read the state of the network before focusing on any number. The motion only runs while
+  something is actually wrong, which also keeps a 2.5s poll loop from paying for an
+  animation that never stops. Reduce Motion swaps the breath for a static wash.
+- **The chrome follows.** Tab bar and controls tint interactive blue when things are calm
+  and shift to the severity colour when they are not.
+- **Alarm is spent in one place.** Only the needs-attention card carries the tint; the
+  status panel above it stays neutral so two red panels never compete.
+- **Readouts are compressed-width numerals**, addresses are monospaced, section labels are
+  tracked uppercase — instrument, not dashboard.
+
+**Needs attention** surfaces the single worst live threat with a Block button, so acting on
+the thing the app exists to catch does not start with scanning a list. A Critical arriving
+while you are in the app shows a non-blocking banner rather than a modal alert — the modal
+used to cover the very card offering the same action.
+
+The activity chart is Swift Charts: drag anywhere on it to pin a sample and read its exact
+connection, host and threat counts, with the same red markers and zero baseline the web
+console uses.
+
 ### Changing the master password
 
 **More → Change master password** calls the 0.3.2+ endpoint. The server keeps this device signed in and revokes every other session; if you saved the password on this device, the Keychain copy is updated so background refresh keeps working.
 
 ## Requirements
 
-- **Xcode 15+** (iOS 17 deployment target)
+- **Xcode 26+** (iOS 26 deployment target — the UI is built on Liquid Glass)
 - A Network Sentinel host with web mode enabled, reachable from your phone (LAN or VPN)
 
 On the server:
