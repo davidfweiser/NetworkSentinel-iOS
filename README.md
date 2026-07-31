@@ -4,7 +4,7 @@ Native **macOS** desktop app for **live network monitoring**, **remote peer trac
 
 > Awareness / monitoring tooling — not a full IDS/IPS replacement.
 
-macOS port of [davidfweiser/NetworkSentinel](https://github.com/davidfweiser/NetworkSentinel) (Linux Avalonia / original Windows WPF). Platform layers use **`lsof`/`netstat`**, **PF (`pfctl`)** elevated via **osascript** or **sudo**, the **macOS unified log** (`log stream`), and **`~/Library/Application Support/NetworkSentinel`**. Version **0.3.4**.
+macOS port of [davidfweiser/NetworkSentinel](https://github.com/davidfweiser/NetworkSentinel) (Linux Avalonia / original Windows WPF). Platform layers use **`lsof`/`netstat`**, **PF (`pfctl`)** elevated via **osascript** or **sudo**, the **macOS unified log** (`log stream`), and **`~/Library/Application Support/NetworkSentinel`**. Version **0.3.5**.
 
 ---
 
@@ -31,6 +31,8 @@ Heuristics flag patterns such as:
 - First-seen remote hosts
 
 Each alert includes **source IP**, **method**, and **where it’s coming from** (DNS + best-effort geo).
+
+**Critical alerts (on by default).** A `Critical` threat is announced actively rather than just added to a list: the desktop app posts a macOS notification, and the web console badges the tab title (`⚠ 2 · Network Sentinel`) and raises a browser notification. Repeats of the same source + threat type are suppressed for 5 minutes so a burst can't spam you. Turn it off under **Settings → Critical threat alerts**.
 
 ### Firewall & block
 - **Block / unblock** remote IPs (inbound, outbound, or both)
@@ -116,7 +118,7 @@ dotnet run -c Release -- -w 18765    # explicit port
 | **Ports** | Local listeners; one-click **Block port** |
 | **Firewall** | Managed rules grouped as In/Out pairs; manual IP and port blocking; **Restore allowlisted** |
 | **Allowlist** | Add/remove trusted domains and IPs; refresh the feed |
-| **Settings** | Monitoring on/off, page refresh speed, poll interval, geo lookups, auth-log monitoring, closed-port scan detection, auto-block + minimum severity, block direction, allowlist feed, **change master password**, **Remove all rules** |
+| **Settings** | Monitoring on/off, page refresh speed, poll interval, geo lookups, auth-log monitoring, closed-port scan detection, critical threat alerts, auto-block + minimum severity, block direction, allowlist feed, **change master password**, **Remove all rules** |
 
 **Master password.** The first visit creates one; every later visit requires it. Change it under **Settings → Master password**. If you can't reach a browser yet, set or reset it from the terminal:
 
@@ -239,6 +241,7 @@ PF details:
 | iptables/nft `LOG` rule + `kern.log` | PF `log` rule + `tcpdump` on `pflog0` |
 | `getent passwd` (service user) | `dscl . -read /Users/…` + `id -u/-g` |
 | `systemd` web service | run `--web` directly (no launchd unit shipped yet) |
+| `notify-send` / `gdbus` desktop alerts | `osascript display notification` (or `terminal-notifier` when installed) |
 
 ---
 
@@ -249,6 +252,7 @@ PF details:
 - Public IP geolocation uses the free `ipwho.is` endpoint over **HTTPS**, falling back to `ip-api.com` (plain HTTP) only if that fails. Both are rate-limited and best-effort. Toggle lookups off in **Settings**, or set `"GeoLookupEnabled": false`; reverse DNS still runs.
 - **Failed-logon detection** reads the unified log via `log stream` and needs no elevation. macOS redacts some message arguments as `<private>`, which can hide the peer address; when that happens the app says so under **Settings → Auth-log monitoring** rather than silently reporting nothing. Set `"AuthLogMonitorEnabled": false` to turn it off.
 - **Closed-port scan detection** is off by default because it needs admin rights twice over: to add the PF log rule, and to run the privileged `tcpdump` that decodes `pflog0` (BPF devices are root-only). Enable it under **Settings → Closed-port scan detection** — a single password prompt installs the rule, creates `pflog0`, and starts the decoder, which writes `/var/log/networksentinel-probe.log` for the app to tail unprivileged. The rule appears on the **Firewall** tab as `NetworkSentinel-ProbeLog` and is removed with the toggle.
+- **Critical threat alerts** post through `osascript`, so macOS attributes the banner to **Script Editor** rather than to Network Sentinel, and it obeys Script Editor's entry in **System Settings → Notifications**. Installing `terminal-notifier` (`brew install terminal-notifier`) is picked up automatically at startup and gives the notification its own identity. **Settings → Critical threat alerts** shows which channel is in use.
   - The rule is `pass in log proto tcp from any to any flags S/SA no state`, placed **last** in the anchor and deliberately **not** `quick`. macOS `pfctl` has no `match` keyword, so a log-only rule is impossible — but every managed block above it is `block drop … quick`, so blocked peers short-circuit and never reach it, and `no state` confines the pass to the SYN alone without adding a state entry. The behaviour change is limited to inbound TCP SYNs nothing else in your ruleset blocked. If you maintain your own PF rules, review that before enabling.
 - Process names for other users’ sockets may show as `Kernel / unknown` without root; monitoring still works.
 - Existing TCP sessions may remain until they reconnect after a block; new matching traffic is stopped by PF.
@@ -268,6 +272,8 @@ PF details:
 | `lsof` SMB warnings | Harmless; Time Machine / network volumes the process cannot stat. |
 | Auth-log alerts never fire | Check **Settings → Auth-log monitoring**. If it reports addresses redacted as `<private>`, macOS is withholding the peer IP; an Apple logging profile that enables private data for `com.apple.sshd` restores it. |
 | Closed-port detection stuck on "waiting for the PF probe log" | The privileged decoder isn't running. Toggle **Closed-port scan detection** off and on and allow the password prompt; verify with `sudo pfctl -a com.networksentinel -s rules` and `ls -l /var/log/networksentinel-probe.log`. |
+| Critical alerts never appear in the desktop app | macOS delivers them as **Script Editor**; allow that app in **System Settings → Notifications** (and turn off Do Not Disturb / a Focus mode). `brew install terminal-notifier` switches to a channel with its own identity. |
+| Critical alerts never appear in the web console | The browser needs permission — re-toggle **Settings → Critical threat alerts** and accept the prompt. If it says *blocked*, allow notifications for the site in your browser settings. Note that browsers only grant notification permission on `localhost` or over HTTPS. |
 | Port shows `LISTEN` locally but the web console is unreachable from another machine | The process listening only proves the app is up. macOS Application Firewall or an upstream network firewall can still drop inbound traffic — allow the binary in **System Settings → Network → Firewall**. |
 
 ---
