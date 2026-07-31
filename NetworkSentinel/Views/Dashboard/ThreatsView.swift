@@ -101,9 +101,12 @@ struct ThreatRow: View {
             HStack {
                 SeverityBadge(level: threat.level, levelNum: threat.levelNum)
                 if let type = threat.type {
-                    Text(type)
+                    // The 0.4 suite reports seven new types; without an icon per kind a
+                    // scrolled list reads as one undifferentiated wall of alerts.
+                    Label(type, systemImage: threat.icon)
                         .font(.caption.weight(.medium))
                         .foregroundStyle(NSTheme.muted)
+                        .lineLimit(1)
                 }
                 Spacer()
                 Text(threat.time)
@@ -123,19 +126,25 @@ struct ThreatRow: View {
             }
 
             HStack {
-                Label(threat.sourceIp, systemImage: "globe")
-                    .font(.caption.monospaced())
-                    .foregroundStyle(NSTheme.cyan)
+                if threat.isBlockable {
+                    Label(threat.sourceIp, systemImage: "globe")
+                        .font(.caption.monospaced())
+                        .foregroundStyle(NSTheme.cyan)
+                }
                 if let origin = threat.origin, !origin.isEmpty {
-                    Text("· \(origin)")
+                    Text(threat.isBlockable ? "· \(origin)" : origin)
                         .font(.caption)
                         .foregroundStyle(NSTheme.muted)
                         .lineLimit(1)
                 }
                 Spacer()
-                Button("Block", action: onBlock)
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(NSTheme.danger)
+                // Host-local detections (new listener, launch item) have no peer to
+                // firewall — the server rejects loopback, so the button is only an error.
+                if threat.isBlockable {
+                    Button("Block", action: onBlock)
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(NSTheme.danger)
+                }
             }
         }
         .padding(.vertical, 6)

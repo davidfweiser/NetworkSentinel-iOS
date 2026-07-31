@@ -5,6 +5,8 @@ struct DashboardView: View {
     @Binding var showServers: Bool
 
     @Namespace private var glassNamespace
+    @State private var showHoneypotPorts = false
+    @State private var honeypotPortsDraft = ""
 
     private var stats: StatsInfo? { model.state?.stats }
     private var settings: SettingsInfo? { model.state?.settings }
@@ -20,6 +22,7 @@ struct DashboardView: View {
                     activityCard
                     controlsCard
                     detectionCard
+                    intrusionCard
                     recentThreats
                 }
                 .padding(.horizontal, 16)
@@ -162,16 +165,28 @@ struct DashboardView: View {
 
                 HStack(spacing: 10) {
                     SeverityBadge(level: t.level, levelNum: t.levelNum)
-                    Text(t.sourceIp)
+                    // 0.4+ host-local detectors (new listener, launch item) report loopback
+                    // rather than a peer, so lead with what was detected instead of an IP
+                    // the user cannot act on.
+                    Text(t.isBlockable ? t.sourceIp : (t.type ?? "This computer"))
                         .font(.system(size: 12).monospaced())
                         .foregroundStyle(NSTheme.cyan)
+                        .lineLimit(1)
                     Spacer()
-                    Button("Block") {
-                        Task { await model.block(ip: t.sourceIp) }
+                    if t.isBlockable {
+                        Button("Block") {
+                            Task { await model.block(ip: t.sourceIp) }
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .buttonStyle(.glassProminent)
+                        .tint(severity.color)
+                    } else {
+                        // Nothing to firewall — the fix is on the server itself, so send
+                        // the user to the full detail rather than to a failing action.
+                        Text("On this host")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(NSTheme.mutedOnTint)
                     }
-                    .font(.subheadline.weight(.semibold))
-                    .buttonStyle(.glassProminent)
-                    .tint(severity.color)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -288,9 +303,43 @@ struct DashboardView: View {
                     }
                 }
             }
+
+            // Web 0.4+ — auto-block rules can expire on their own. Presets rather than a
+            // minutes field: nobody types "10080" on a phone to mean a week.
+            if let expiry = settings?.autoBlockExpiryMinutes {
+                Menu {
+                    ForEach(Self.expiryOptions, id: \.minutes) { option in
+                        Button(option.label) {
+                            Task { await model.setAutoBlockExpiry(minutes: option.minutes) }
+                        }
+                    }
+                } label: {
+                    controlLabel(
+                        title: "Block rules expire: \(Self.expiryLabel(expiry))",
+                        icon: "timer",
+                        tint: expiry > 0 ? NSTheme.signal : NSTheme.muted
+                    )
+                }
+                .buttonStyle(.glass)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .nsCard()
+    }
+
+    private static let expiryOptions: [(minutes: Int, label: String)] = [
+        (0, "Never"),
+        (60, "1 hour"),
+        (360, "6 hours"),
+        (1440, "24 hours"),
+        (10080, "7 days")
+    ]
+
+    private static func expiryLabel(_ minutes: Int) -> String {
+        if let known = expiryOptions.first(where: { $0.minutes == minutes }) { return known.label }
+        if minutes % 1440 == 0 { return "\(minutes / 1440)d" }
+        if minutes % 60 == 0 { return "\(minutes / 60)h" }
+        return "\(minutes)m"
     }
 
     private func controlButton(
@@ -378,6 +427,150 @@ struct DashboardView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .nsCard()
+        }
+    }
+
+    // MARK: - Intrusion detection (web 0.4+)
+
+    /// The 0.4.0 detector suite. `threatIntelEnabled` stands in for the whole group —
+    /// a server that reports one of these reports all of them — so one probe gates the
+    /// card and nothing here is offered to a 0.3.x server that would reject it.
+    @ViewBuilder
+    private var intrusionCard: some View {
+        if settings?.threatIntelEnabled != nil {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Intrusion detection").nsEyebrow()
+                    .padding(.bottom, 4)
+
+                settingToggle(
+                    title: "Threat-intel blocklists",
+                    subtitle: settings?.threatIntelStatus,
+                    isOn: settings?.threatIntelEnabled ?? true
+                ) { await model.setThreatIntel($0) }
+
+                settingToggle(
+                    title: "New-listener alerts",
+                    subtitle: "A new open port, or a known port changing owner process.",
+                    isOn: settings?.newListenerAlertsEnabled ?? true
+                ) { await model.setNewListenerAlerts($0) }
+
+                settingToggle(
+                    title: "Process reputation",
+                    subtitle: "Unsigned or quarantined binaries talking to public hosts, and shells with outbound connections.",
+                    isOn: settings?.processReputationEnabled ?? true
+                ) { await model.setProcessReputation($0) }
+
+                settingToggle(
+                    title: "ARP / gateway watch",
+                    subtitle: settings?.arpWatchStatus,
+                    isOn: settings?.arpWatchEnabled ?? true
+                ) { await model.setArpWatch($0) }
+
+                settingToggle(
+                    title: "Launch-item watch",
+                    subtitle: settings?.launchWatchStatus,
+                    isOn: settings?.launchItemWatchEnabled ?? true
+                ) { await model.setLaunchItemWatch($0) }
+
+                settingToggle(
+                    title: "Exfiltration monitor",
+                    subtitle: settings?.exfilStatus,
+                    isOn: settings?.exfilMonitorEnabled ?? true
+                ) { await model.setExfilMonitor($0) }
+
+                if let mb = settings?.exfilMbPer10Min {
+                    settingMenu(
+                        title: "Exfil threshold",
+                        value: "\(mb) MB / 10 min",
+                        options: Self.exfilOptions.map { ("\($0) MB", $0) }
+                    ) { await model.setExfilThreshold($0) }
+                }
+
+                settingToggle(
+                    title: "Honeypot decoy ports",
+                    subtitle: settings?.honeypotStatus,
+                    isOn: settings?.honeypotEnabled ?? false
+                ) { await model.setHoneypot($0) }
+
+                Button {
+                    honeypotPortsDraft = settings?.honeypotPorts ?? ""
+                    showHoneypotPorts = true
+                } label: {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Decoy ports")
+                                .font(.subheadline)
+                                .foregroundStyle(NSTheme.text)
+                            Text("Ports already in use are skipped.")
+                                .font(.caption2)
+                                .foregroundStyle(NSTheme.muted)
+                        }
+                        Spacer()
+                        Text(settings?.honeypotPorts?.isEmpty == false ? settings!.honeypotPorts! : "None")
+                            .font(.system(size: 12).monospaced())
+                            .foregroundStyle(NSTheme.cyan)
+                            .lineLimit(1)
+                        Image(systemName: "chevron.right")
+                            .font(.caption2)
+                            .foregroundStyle(NSTheme.muted)
+                    }
+                    .padding(.vertical, 7)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .nsCard()
+            .alert("Decoy ports", isPresented: $showHoneypotPorts) {
+                TextField("2323,3389,5900", text: $honeypotPortsDraft)
+                    .keyboardType(.numbersAndPunctuation)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                Button("Save") {
+                    Task { await model.setHoneypotPorts(honeypotPortsDraft) }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Comma-separated TCP ports nothing legitimate uses. Any completed connection to one is a Critical alert. The server refuses its own console port.")
+            }
+        }
+    }
+
+    private static let exfilOptions = [50, 100, 250, 500, 1000, 2000]
+
+    /// Preset picker for a numeric server setting, styled to match `settingToggle` rows.
+    private func settingMenu(
+        title: String,
+        subtitle: String? = nil,
+        value: String,
+        options: [(label: String, value: Int)],
+        action: @escaping (Int) async -> Void
+    ) -> some View {
+        Menu {
+            ForEach(options, id: \.value) { option in
+                Button(option.label) {
+                    Task { await action(option.value) }
+                }
+            }
+        } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.subheadline)
+                        .foregroundStyle(NSTheme.text)
+                    if let subtitle, !subtitle.isEmpty {
+                        Text(subtitle)
+                            .font(.caption2)
+                            .foregroundStyle(NSTheme.muted)
+                    }
+                }
+                Spacer()
+                Text(value)
+                    .font(.system(size: 12).monospaced())
+                    .foregroundStyle(NSTheme.cyan)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption2)
+                    .foregroundStyle(NSTheme.muted)
+            }
+            .padding(.vertical, 7)
         }
     }
 

@@ -91,7 +91,9 @@ final class CriticalAlertService {
         for (index, t) in threats.prefix(5).enumerated() {
             let content = UNMutableNotificationContent()
             content.title = "Critical — \(serverName)"
-            content.subtitle = t.sourceIp
+            // Host-local detectors (0.4+) report loopback rather than a peer; the threat
+            // type says far more on a lock screen than "127.0.0.1" does.
+            content.subtitle = t.isBlockable ? t.sourceIp : (t.type ?? t.sourceIp)
             content.body = t.title
             if let detail = t.detail, !detail.isEmpty {
                 content.body = "\(t.title)\n\(detail)"

@@ -9,22 +9,25 @@ Connect to one or more hosts running the headless web UI (`-w` / `--web`), sign 
 | Area | What you get |
 |------|----------------|
 | **Multi-server** | Add/edit/delete servers; switch between home, lab, VPS, etc. |
-| **Dashboard** | Needs-attention card with one-tap block, live stats, scrubbable activity chart, pause/resume and auto-block controls |
+| **Dashboard** | Needs-attention card with one-tap block, live stats, scrubbable activity chart, pause/resume, auto-block controls and rule expiry |
 | **Detection** | Toggle geo lookups, auth-log brute-force monitoring, closed-port scan detection, and the server's own Critical warnings, with its status text inline |
+| **Intrusion detection** | Threat-intel blocklists, new-listener alerts, process reputation, ARP/gateway watch, launch-item watch, exfiltration monitor with threshold, honeypot decoy ports (web 0.4+) |
 | **Threats** | Severity filters, search, clear alerts, block source IP |
 | **Hosts** | Remote peers with geo/threat badges; swipe to block/unblock |
 | **Connections** | Live process + endpoint table; block remote peers |
-| **More** | Listening ports, firewall rules, allowlist add/remove/refresh, change master password |
+| **More** | Listening ports, firewall rules, allowlist add/remove/refresh, server webhook URL, change master password |
 | **Alerts** | Time-sensitive notifications and in-app popups for Critical threats, with catch-up on launch |
 | **Secure storage** | Session tokens & optional remembered passwords in Keychain |
 
-Talks to the same JSON API as the browser console (Linux, Windows & macOS web **0.3.x**, current through **0.3.5**):
+Talks to the same JSON API as the browser console (Linux, Windows & macOS web **0.3.x – 0.4.x**, current through **0.4.0**):
 
 - `GET /api/auth/status`
 - `POST /api/auth/login` · `/api/auth/setup` · `/api/auth/logout`
 - `POST /api/auth/change-password` (0.3.2+) — `currentPassword`, `newPassword`, `confirm`
-- `GET /api/state` (settings include `geoLookupEnabled` / `allowlistUseRemoteFeed` / `authLogMonitorEnabled` + `authLogStatus` / `probeLogEnabled` + `probeLogStatus` / `criticalAlertsEnabled`; threats include `ts`; rules include `isProtected`, `address`, `ports`)
+- `GET /api/state` (settings include `geoLookupEnabled` / `allowlistUseRemoteFeed` / `authLogMonitorEnabled` + `authLogStatus` / `probeLogEnabled` + `probeLogStatus` / `criticalAlertsEnabled`, and on 0.4+ the intrusion-detection group below; threats include `ts`; rules include `isProtected`, `address`, `ports`)
 - `POST /api/action` — `block`, `unblock`, `set_setting`, `block_port`, `unblock_port`, `remove_rule`, `remove_all_rules`, allowlist, auto-block, …
+
+`set_setting` carries booleans as `"true"`/`"false"` and the 0.4 numeric/text settings as their literal value, including the empty string that switches the webhook off.
 
 Sessions use the web UI’s `ns_session` cookie, sent as `Authorization: Bearer` from the app.
 
@@ -37,6 +40,26 @@ Compatible with older web servers for core monitor/block; newer settings and act
 - **Critical alerts on server** (0.3.5+) — the server's own Critical warnings: a desktop notification from its GUI and a tab-title badge in its web console. On by default.
 
 The first two toggles show the server's own status line, so you can tell when a feature is on but blocked (for example, waiting on elevation — use **Authorize firewall** in More).
+
+### Intrusion detection (0.4.0)
+
+A second Dashboard card, shown only against servers that advertise the suite. Each row carries the server's own status line where it publishes one, so a detector that is switched on but not actually running says why.
+
+| Setting | What the server does |
+|---------|----------------------|
+| **Threat-intel blocklists** | Checks remote peers against FireHOL level1 and Spamhaus DROP; a listed peer is an instant Critical |
+| **New-listener alerts** | Diffs listening ports against a persisted baseline — a new port is Medium, a known port changing owner process is High |
+| **Process reputation** | Unsigned or quarantined binaries talking to public hosts, executables in temp/download folders, shells with outbound connections |
+| **ARP / gateway watch** | Gateway MAC change (Critical) and duplicate MAC on the LAN (High) |
+| **Launch-item watch** | LaunchAgents / LaunchDaemons additions and modifications |
+| **Exfiltration monitor** | Outbound bytes to one non-allowlisted public host, with a threshold picker (default 250 MB / 10 min; the server's floor is 10) |
+| **Honeypot decoy ports** | Binds decoy TCP ports; any completed connection is Critical. The port list is editable, and the server refuses its own console port |
+
+Two more 0.4 settings live where they belong rather than in that card: **auto-block rule expiry** sits with the other auto-block controls (Never / 1 hour / 6 hours / 24 hours / 7 days), and the server's **webhook URL** is in More, next to this device's alerts — it is the one alert path that still works when the phone is asleep or the app has been force-quit.
+
+**Threats that are not an address.** The new detectors that watch the machine itself — new listener, launch-item change — report `127.0.0.1` rather than a peer, and the server refuses to firewall loopback. Wherever the app would otherwise offer **Block** for one of those (needs-attention card, threat list, in-app Critical banner), it shows what was detected instead, so the primary action is never a button that can only fail. Threat rows also carry a per-type icon, since 0.4 raised the number of distinct threat types from eight to fifteen.
+
+Linux and Windows are still on 0.3.5 as of this writing; these rows appear as soon as those builds ship the same settings.
 
 ### Two kinds of Critical alert
 

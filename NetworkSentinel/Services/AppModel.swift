@@ -587,6 +587,11 @@ final class AppModel {
         _ = await runAction("set_setting", value: enabled ? "true" : "false", fieldName: key)
     }
 
+    /// Web 0.4+: `set_setting` for the free-text and numeric settings.
+    func setSetting(_ key: String, value: String) async {
+        _ = await runAction("set_setting", value: value, fieldName: key)
+    }
+
     func setBlockInbound(_ on: Bool) async { await setSetting("blockInbound", enabled: on) }
     func setBlockOutbound(_ on: Bool) async { await setSetting("blockOutbound", enabled: on) }
     func setGeoLookup(_ on: Bool) async { await setSetting("geoLookupEnabled", enabled: on) }
@@ -600,6 +605,37 @@ final class AppModel {
     func setServerCriticalAlerts(_ on: Bool) async { await setSetting("criticalAlertsEnabled", enabled: on) }
     func setAllowlistRemoteFeed(_ on: Bool) async { await setSetting("allowlistUseRemoteFeed", enabled: on) }
     func setAutoBlockEnabled(_ on: Bool) async { await setSetting("autoBlockEnabled", enabled: on) }
+
+    // MARK: Intrusion detection (web 0.4+)
+
+    func setThreatIntel(_ on: Bool) async { await setSetting("threatIntelEnabled", enabled: on) }
+    func setProcessReputation(_ on: Bool) async { await setSetting("processReputationEnabled", enabled: on) }
+    func setNewListenerAlerts(_ on: Bool) async { await setSetting("newListenerAlertsEnabled", enabled: on) }
+    func setArpWatch(_ on: Bool) async { await setSetting("arpWatchEnabled", enabled: on) }
+    func setLaunchItemWatch(_ on: Bool) async { await setSetting("launchItemWatchEnabled", enabled: on) }
+    func setExfilMonitor(_ on: Bool) async { await setSetting("exfilMonitorEnabled", enabled: on) }
+    func setHoneypot(_ on: Bool) async { await setSetting("honeypotEnabled", enabled: on) }
+
+    /// Outbound megabytes to one host per 10 minutes. The server rejects anything under 10.
+    func setExfilThreshold(_ megabytes: Int) async {
+        await setSetting("exfilMbPer10Min", value: "\(megabytes)")
+    }
+
+    /// Comma-separated decoy TCP ports. The server rejects an unparseable list, and
+    /// refuses its own console port, so its message is worth surfacing verbatim.
+    func setHoneypotPorts(_ ports: String) async {
+        await setSetting("honeypotPorts", value: ports.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// Empty string turns webhook alerts off.
+    func setWebhookURL(_ url: String) async {
+        await setSetting("webhookUrl", value: url.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// Minutes before an auto-created block rule expires. 0 = permanent until removed.
+    func setAutoBlockExpiry(minutes: Int) async {
+        await setSetting("autoBlockExpiryMinutes", value: "\(minutes)")
+    }
 
     /// Web 0.3+: block a local port (TCP/UDP, direction).
     func blockPort(_ port: Int, protocol proto: String = "TCP", direction: String = "Inbound") async {

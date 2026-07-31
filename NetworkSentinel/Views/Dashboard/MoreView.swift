@@ -10,6 +10,8 @@ struct MoreView: View {
     @State private var showBlockPort = false
     @State private var blockPortText = ""
     @State private var confirmRemoveAll = false
+    @State private var showWebhook = false
+    @State private var webhookDraft = ""
 
     var body: some View {
         NavigationStack {
@@ -85,6 +87,42 @@ struct MoreView: View {
                     Text("Alerts")
                 } footer: {
                     Text("Foreground: polls every few seconds. Background: continues briefly after you leave, then iOS wakes the app periodically (Background App Refresh). Turn on Background App Refresh in Settings → Network Sentinel. Use “Remember password” so background login works.")
+                }
+
+                // Web 0.4+ — the server's own outbound alerting. This is the one alert
+                // path that survives the phone being asleep or the app force-quit, so it
+                // sits next to the device alerts it backs up rather than in Detection.
+                if let webhook = model.state?.settings?.webhookUrl {
+                    Section {
+                        Button {
+                            webhookDraft = webhook
+                            showWebhook = true
+                        } label: {
+                            Label {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Webhook URL")
+                                        .foregroundStyle(NSTheme.text)
+                                    Text(webhook.isEmpty ? "Off" : webhook)
+                                        .font(.caption.monospaced())
+                                        .foregroundStyle(webhook.isEmpty ? NSTheme.muted : NSTheme.cyan)
+                                        .lineLimit(2)
+                                }
+                            } icon: {
+                                Image(systemName: "arrow.up.forward.app")
+                                    .foregroundStyle(NSTheme.accent)
+                            }
+                        }
+                        .listRowBackground(NSTheme.row)
+                    } header: {
+                        Text("Server webhook")
+                    } footer: {
+                        let status = model.state?.settings?.webhookStatus ?? ""
+                        Text(
+                            webhook.isEmpty || status.isEmpty
+                                ? "The server POSTs Critical threats to this URL. ntfy, Slack and Discord are formatted automatically; anything else receives generic JSON. Unlike this device’s alerts, it keeps working when the phone is asleep."
+                                : status
+                        )
+                    }
                 }
 
                 Section {
@@ -356,6 +394,21 @@ struct MoreView: View {
                 Button("Cancel", role: .cancel) { allowlistValue = "" }
             } message: {
                 Text("Trusted domains/IPs are never auto-blocked.")
+            }
+            .alert("Webhook URL", isPresented: $showWebhook) {
+                TextField("https://ntfy.sh/your-topic", text: $webhookDraft)
+                    .keyboardType(.URL)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                Button("Save") {
+                    Task { await model.setWebhookURL(webhookDraft) }
+                }
+                Button("Turn off", role: .destructive) {
+                    Task { await model.setWebhookURL("") }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Where the server posts Critical threats. Leave empty to switch webhook alerts off.")
             }
             .alert("Block port", isPresented: $showBlockPort) {
                 TextField("Port number", text: $blockPortText)

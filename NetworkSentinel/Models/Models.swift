@@ -99,6 +99,43 @@ struct SettingsInfo: Codable {
     /// browser notification in the web console) — present on web ≥ 0.3.5.
     /// Independent of this app's own notifications.
     let criticalAlertsEnabled: Bool?
+
+    // MARK: Intrusion-detection suite (web ≥ 0.4.0)
+    //
+    // `threatIntelEnabled` is the probe for the whole group: a server that sends it sends
+    // all of these, so the app gates one card on that single field.
+
+    /// Remote peers checked against FireHOL level1 / Spamhaus DROP; a match is Critical.
+    let threatIntelEnabled: Bool?
+    /// Feed state — entry counts, last refresh, or why the feeds are unavailable.
+    let threatIntelStatus: String?
+    /// Unsigned/quarantined binaries talking to public hosts, executables in temp
+    /// folders, shells with outbound connections.
+    let processReputationEnabled: Bool?
+    /// New port listening after the baseline, or a known port changing owner process.
+    let newListenerAlertsEnabled: Bool?
+    /// Default-gateway MAC changes and duplicate MACs on the LAN.
+    let arpWatchEnabled: Bool?
+    let arpWatchStatus: String?
+    /// LaunchAgents / LaunchDaemons watch (macOS) — how malware persists across reboots.
+    let launchItemWatchEnabled: Bool?
+    let launchWatchStatus: String?
+    /// Outbound byte volume to a single non-allowlisted public host.
+    let exfilMonitorEnabled: Bool?
+    /// Megabytes to one host within 10 minutes before the alert fires. Server floor is 10.
+    let exfilMbPer10Min: Int?
+    let exfilStatus: String?
+    /// Decoy TCP ports; any completed connection is a Critical with no false-positive path.
+    let honeypotEnabled: Bool?
+    /// Comma-separated decoy port list, e.g. `2323,3389,5900`.
+    let honeypotPorts: String?
+    let honeypotStatus: String?
+    /// Critical threats POSTed to ntfy / Slack / Discord / generic JSON. Empty = off.
+    let webhookUrl: String?
+    let webhookStatus: String?
+    /// Minutes before an auto-created block rule is removed again. 0 = never.
+    let autoBlockExpiryMinutes: Int?
+
     let isMonitoring: Bool?
 }
 
@@ -183,6 +220,38 @@ struct ThreatInfo: Codable, Identifiable {
     let detail: String?
     let origin: String?
     let method: String?
+
+    /// Whether offering **Block** on this threat leads anywhere.
+    ///
+    /// The 0.4.0 detectors that watch the machine itself — new listener, launch-item
+    /// change — report `127.0.0.1` as the source, and the server refuses to firewall
+    /// private or loopback addresses. Showing Block there is a button whose only outcome
+    /// is an error toast, and on the attention card it would be the primary action.
+    var isBlockable: Bool {
+        let ip = sourceIp.trimmingCharacters(in: .whitespaces).lowercased()
+        if ip.isEmpty { return false }
+        return !["127.0.0.1", "::1", "0.0.0.0", "::", "*", "localhost"].contains(ip)
+    }
+
+    /// SF Symbol for the server's threat-type text. Web 0.4.0 added seven types, and a
+    /// list where every row is the same triangle makes them all look like one thing.
+    var icon: String {
+        switch (type ?? "").lowercased() {
+        case "new listener": return "antenna.radiowaves.left.and.right"
+        case "suspicious process": return "cpu"
+        case "known-bad address": return "xmark.shield.fill"
+        case "honeypot hit": return "target"
+        case "arp spoofing": return "point.3.connected.trianglepath.dotted"
+        case "persistence change": return "arrow.clockwise.circle"
+        case "data exfiltration": return "arrow.up.doc"
+        case "port scan", "sensitive port probe": return "dot.radiowaves.left.and.right"
+        case "brute-force pattern", "failed logon burst": return "person.badge.key"
+        case "new remote host": return "globe"
+        case "suspicious outbound": return "arrow.up.right"
+        case "rapid reconnect", "short-lived burst": return "arrow.left.arrow.right"
+        default: return "exclamationmark.triangle"
+        }
+    }
 }
 
 struct PortInfo: Codable, Identifiable {

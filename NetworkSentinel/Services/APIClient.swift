@@ -175,7 +175,9 @@ actor APIClient {
         let url = try url(base: baseURL, path: "/api/action")
         var body: [String: String] = ["action": action]
         if let ip, !ip.isEmpty { body["ip"] = ip }
-        if let value, !value.isEmpty { body["value"] = value }
+        // Sent even when empty: clearing the 0.4+ webhook URL is how it is switched off,
+        // and an omitted `value` would read as "no change" rather than "set to nothing".
+        if let value { body["value"] = value }
         if let kind, !kind.isEmpty { body["kind"] = kind }
         if let fieldName, !fieldName.isEmpty { body["name"] = fieldName }
         if let direction, !direction.isEmpty { body["direction"] = direction }

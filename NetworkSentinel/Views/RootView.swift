@@ -86,18 +86,25 @@ struct CriticalBanner: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(NSTheme.text)
                     .lineLimit(2)
-                Text(payload.threat.sourceIp)
+                Text(payload.threat.isBlockable
+                     ? payload.threat.sourceIp
+                     : (payload.threat.type ?? "On this host"))
                     .font(.system(size: 11).monospaced())
                     .foregroundStyle(NSTheme.cyan)
+                    .lineLimit(1)
             }
 
             Spacer(minLength: 4)
 
             VStack(spacing: 6) {
-                Button("Block", action: onBlock)
-                    .font(.caption.weight(.bold))
-                    .buttonStyle(.glassProminent)
-                    .tint(severity.color)
+                // A 0.4+ host-local Critical has no peer to block; only the dismiss
+                // control is meaningful there.
+                if payload.threat.isBlockable {
+                    Button("Block", action: onBlock)
+                        .font(.caption.weight(.bold))
+                        .buttonStyle(.glassProminent)
+                        .tint(severity.color)
+                }
                 Button(action: onDismiss) {
                     Image(systemName: "xmark")
                         .font(.system(size: 10, weight: .bold))
