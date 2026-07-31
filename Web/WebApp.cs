@@ -1336,21 +1336,24 @@ public sealed class WebApp : IDisposable
 <title>Network Sentinel</title>
 <style>
   :root {
-    --bg-deep: #070b16;
-    --bg-panel: #0e1628;
-    --bg-card: #121c31;
-    --bg-hover: #18243f;
-    --stroke: rgba(168,197,255,.2);
-    --stroke-strong: rgba(124,249,255,.34);
-    --text: #f2f7ff;
-    --text2: #93a4c3;
-    --muted: #667794;
-    --cyan: #3de7c8;
-    --blue: #4c8dff;
-    --violet: #9b7bff;
-    --amber: #ffb020;
-    --danger: #ff4d6d;
-    --success: #3ddc97;
+    --bg-deep: #0a0e14;
+    --bg-panel: #10141c;
+    --bg-card: #161b26;
+    --bg-hover: #1e2534;
+    --stroke: rgba(255,255,255,.10);
+    --stroke-strong: rgba(74,158,255,.40);
+    --text: #edf1f7;
+    --text2: #8a94a6;
+    --muted: #636b78;
+    --cyan: #3bc8b4;
+    --blue: #4a9eff;
+    --amber: #f5b93b;
+    --danger: #ff5d78;
+    --sev-low: #59bff2;
+    --sev-medium: #f2bf40;
+    --sev-high: #fa7340;
+    --sev-critical: #f24059;
+    --success: #4dd18c;
     --font: "Segoe UI", system-ui, -apple-system, sans-serif;
     --mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, monospace;
   }
@@ -1360,19 +1363,19 @@ public sealed class WebApp : IDisposable
     font-family: var(--font); color: var(--text);
     background:
       radial-gradient(1200px 600px at 10% -10%, rgba(61,231,200,.08), transparent 50%),
-      radial-gradient(900px 500px at 90% 0%, rgba(76,141,255,.1), transparent 45%),
+      radial-gradient(900px 500px at 90% 0%, rgba(74,158,255,.1), transparent 45%),
       var(--bg-deep);
   }
   header {
     display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px;
     padding: 16px 22px; border-bottom: 1px solid var(--stroke);
-    background: linear-gradient(180deg, #101b33, #0e1628);
+    background: linear-gradient(180deg, #11282a, #0f151f);
     position: sticky; top: 0; z-index: 10;
   }
   .brand { display: flex; flex-direction: column; gap: 2px; min-width: 180px; }
   .brand h1 {
     margin: 0; font-size: 1.15rem; letter-spacing: .02em;
-    background: linear-gradient(90deg, var(--cyan), var(--blue), var(--violet));
+    background: linear-gradient(90deg, var(--cyan), var(--blue));
     -webkit-background-clip: text; background-clip: text; color: transparent;
   }
   .brand .sub { color: var(--text2); font-size: .78rem; }
@@ -1388,7 +1391,7 @@ public sealed class WebApp : IDisposable
   }
   nav button.active {
     color: var(--text); border-color: transparent;
-    background: linear-gradient(135deg, rgba(61,231,200,.25), rgba(76,141,255,.3));
+    background: linear-gradient(135deg, rgba(61,231,200,.25), rgba(74,158,255,.3));
   }
   .actions { display: flex; flex-wrap: wrap; gap: 6px; }
   .actions button.primary {
@@ -1396,15 +1399,15 @@ public sealed class WebApp : IDisposable
     background: linear-gradient(135deg, var(--cyan), var(--blue));
     border: none;
   }
-  .actions button.danger { border-color: rgba(255,77,109,.4); color: #ffb0bd; }
+  .actions button.danger { border-color: rgba(255,93,120,.4); color: #ffa8b6; }
   main { padding: 18px 22px 40px; max-width: 1720px; margin: 0 auto; }
   .status {
     margin-bottom: 14px; padding: 10px 14px; border-radius: 10px;
     background: var(--bg-panel); border: 1px solid var(--stroke);
     color: var(--text2); font-size: .88rem;
   }
-  .status.err { border-color: rgba(255,77,109,.45); color: #ffb0bd; }
-  .status.good { border-color: rgba(61,220,151,.4); color: #9fe8c8; }
+  .status.err { border-color: rgba(255,93,120,.45); color: #ffa8b6; }
+  .status.good { border-color: rgba(77,209,140,.4); color: #a6e6c4; }
   .cards {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
     gap: 10px; margin-bottom: 16px;
@@ -1436,7 +1439,7 @@ public sealed class WebApp : IDisposable
   th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--stroke); vertical-align: top; }
   th {
     color: var(--muted); font-weight: 600; font-size: .72rem;
-    text-transform: uppercase; letter-spacing: .05em; background: #0c1426;
+    text-transform: uppercase; letter-spacing: .05em; background: #12161f;
     position: sticky; top: 0;
   }
   tbody tr:nth-child(even) td { background: rgba(255,255,255,.02); }
@@ -1456,7 +1459,7 @@ public sealed class WebApp : IDisposable
     position: sticky; right: 0; z-index: 2;
     box-shadow: -10px 0 12px -10px rgba(0,0,0,.7);
   }
-  tbody tr:nth-child(even) td.row-actions { background: #101a2f; }
+  tbody tr:nth-child(even) td.row-actions { background: #141922; }
   tr:hover td.row-actions { background: var(--bg-hover); }
   /* IPs, ports, and timestamps must never break mid-value — wide tables
      scroll horizontally instead (the actions column stays pinned). */
@@ -1473,19 +1476,19 @@ public sealed class WebApp : IDisposable
   .chip {
     display: inline-block; padding: 1px 8px; border-radius: 999px; margin-right: 4px;
     font-size: .72rem; font-weight: 600;
-    background: rgba(76,141,255,.16); color: #9ec0ff; border: 1px solid rgba(76,141,255,.25);
+    background: rgba(74,158,255,.16); color: #a8cfff; border: 1px solid rgba(74,158,255,.25);
   }
   .row-actions button.rm, .toolbar button.rm, button.rm-lg {
-    border-color: rgba(255,77,109,.4); color: #ffb0bd;
+    border-color: rgba(255,93,120,.4); color: #ffa8b6;
   }
   .row-actions button.rm:hover, .toolbar button.rm:hover, button.rm-lg:hover {
-    background: rgba(255,77,109,.12); border-color: rgba(255,77,109,.65); color: #ffd3db;
+    background: rgba(255,93,120,.12); border-color: rgba(255,93,120,.65); color: #ffd0d8;
   }
   .row-actions button:disabled { opacity: .55; cursor: wait; }
   button.rm-lg {
     appearance: none; font: inherit; font-size: .85rem; cursor: pointer;
     padding: 8px 14px; border-radius: 8px; background: var(--bg-card);
-    border: 1px solid rgba(255,77,109,.4); transition: .15s ease; flex-shrink: 0;
+    border: 1px solid rgba(255,93,120,.4); transition: .15s ease; flex-shrink: 0;
   }
   .setting-row {
     display: flex; align-items: center; justify-content: space-between; gap: 16px;
@@ -1531,7 +1534,7 @@ public sealed class WebApp : IDisposable
   }
   .pw-change button[type="submit"]:disabled { opacity: .55; cursor: wait; }
   .pw-change .pw-msg { font-size: .85rem; min-height: 1.2em; margin: 0; }
-  .pw-change .pw-msg.err { color: #ffb0bd; }
+  .pw-change .pw-msg.err { color: #ffa8b6; }
   .pw-change .pw-msg.ok { color: var(--success); }
   .switch { position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0; }
   .switch input { opacity: 0; width: 0; height: 0; }
@@ -1544,7 +1547,7 @@ public sealed class WebApp : IDisposable
     background: var(--muted); border-radius: 50%; transition: .2s ease;
   }
   .switch input:checked + .slider {
-    background: linear-gradient(135deg, rgba(61,231,200,.5), rgba(76,141,255,.55));
+    background: linear-gradient(135deg, rgba(61,231,200,.5), rgba(74,158,255,.55));
     border-color: transparent;
   }
   .switch input:checked + .slider:before { transform: translateX(20px); background: #fff; }
@@ -1553,10 +1556,10 @@ public sealed class WebApp : IDisposable
     display: inline-block; padding: 2px 8px; border-radius: 999px;
     font-size: .72rem; font-weight: 600; letter-spacing: .02em;
   }
-  .lvl-info, .lvl-low { background: rgba(76,141,255,.18); color: #9ec0ff; }
-  .lvl-medium { background: rgba(255,176,32,.18); color: var(--amber); }
-  .lvl-high { background: rgba(255,77,109,.18); color: #ff8da3; }
-  .lvl-critical { background: rgba(255,77,109,.35); color: #fff; }
+  .lvl-info, .lvl-low { background: rgba(89,191,242,.18); color: var(--sev-low); }
+  .lvl-medium { background: rgba(242,191,64,.18); color: var(--sev-medium); }
+  .lvl-high { background: rgba(250,115,64,.18); color: var(--sev-high); }
+  .lvl-critical { background: rgba(242,64,89,.35); color: #fff; }
   .blocked { color: var(--danger); font-weight: 600; }
   .ok { color: var(--success); }
   .muted { color: var(--muted); }
@@ -1567,7 +1570,7 @@ public sealed class WebApp : IDisposable
     background: var(--bg-card); border: 1px solid var(--stroke); color: var(--text2);
   }
   .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
-  .dot.on { background: var(--success); box-shadow: 0 0 8px rgba(61,220,151,.6); }
+  .dot.on { background: var(--success); box-shadow: 0 0 8px rgba(77,209,140,.6); }
   .dot.off { background: var(--amber); }
   .help { color: var(--text2); line-height: 1.55; max-width: 720px; }
   .help code {
@@ -1594,7 +1597,7 @@ public sealed class WebApp : IDisposable
     padding: 20px;
     background:
       radial-gradient(900px 500px at 20% 0%, rgba(61,231,200,.1), transparent 50%),
-      radial-gradient(800px 400px at 90% 20%, rgba(76,141,255,.12), transparent 45%),
+      radial-gradient(800px 400px at 90% 20%, rgba(74,158,255,.12), transparent 45%),
       rgba(7,11,22,.96);
   }
   #authGate.hidden { display: none !important; }
@@ -1608,7 +1611,7 @@ public sealed class WebApp : IDisposable
   }
   .auth-card h1 {
     margin: 0 0 6px; font-size: 1.25rem;
-    background: linear-gradient(90deg, var(--cyan), var(--blue), var(--violet));
+    background: linear-gradient(90deg, var(--cyan), var(--blue));
     -webkit-background-clip: text; background-clip: text; color: transparent;
   }
   .auth-card .lead { color: var(--text2); font-size: .9rem; margin: 0 0 18px; line-height: 1.45; }
@@ -1623,7 +1626,7 @@ public sealed class WebApp : IDisposable
   }
   .auth-card input:focus { outline: 1px solid var(--blue); border-color: var(--blue); }
   .auth-card .auth-error {
-    color: #ffb0bd; font-size: .85rem; min-height: 1.2em; margin: 0 0 12px;
+    color: #ffa8b6; font-size: .85rem; min-height: 1.2em; margin: 0 0 12px;
   }
   .auth-card button.submit {
     width: 100%; appearance: none; border: none; border-radius: 10px;
@@ -2013,13 +2016,13 @@ public sealed class WebApp : IDisposable
         ${grid}
         <polygon points="${area}" fill="rgba(61,231,200,.13)"/>
         ${threats}
-        <polyline points="${pts}" fill="none" stroke="#3de7c8" stroke-width="2"
+        <polyline points="${pts}" fill="none" stroke="#3bc8b4" stroke-width="2"
           vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/>
-        <circle cx="${x(act.length - 1).toFixed(1)}" cy="${y(last.connections).toFixed(1)}" r="3.5" fill="#3de7c8"/>
+        <circle cx="${x(act.length - 1).toFixed(1)}" cy="${y(last.connections).toFixed(1)}" r="3.5" fill="#3bc8b4"/>
       </svg>
       <div class="chart-meta">
         <span>${esc(act[0].time)}</span>
-        <span><span style="color:#3de7c8">●</span> connections (now ${esc(last.connections)}, peak ${esc(maxC)})
+        <span><span style="color:#3bc8b4">●</span> connections (now ${esc(last.connections)}, peak ${esc(maxC)})
           &nbsp; <span style="color:#ff5d78">▮</span> threat detected${threatTotal ? ` (${esc(threatTotal)} in window)` : ' (none in window)'}</span>
         <span>${esc(last.time)}</span>
       </div>`;
