@@ -33,22 +33,65 @@ struct RootView: View {
         // A Critical arriving in the foreground used to open a modal alert, which covered
         // the Dashboard card offering the same Block button. A banner says the same thing
         // without taking the screen hostage, and the card stays there after it goes.
+        // Every floating notice shares one stack. Blocking an IP raises both at once — the
+        // action's confirmation, and the next Critical the poll turns up — and as separate
+        // top overlays the confirmation landed squarely on the banner's Block and dismiss
+        // buttons. Stacked, they queue instead of covering each other.
         .overlay(alignment: .top) {
-            if let alert = model.pendingCriticalAlert {
-                CriticalBanner(
-                    payload: alert,
-                    onBlock: {
-                        let ip = alert.threat.sourceIp
-                        model.dismissCriticalAlert()
-                        Task { await model.block(ip: ip) }
-                    },
-                    onDismiss: { model.dismissCriticalAlert() }
-                )
-                .padding(.horizontal, 12)
-                .transition(.move(edge: .top).combined(with: .opacity))
+            VStack(spacing: 8) {
+                if let alert = model.pendingCriticalAlert {
+                    CriticalBanner(
+                        payload: alert,
+                        onBlock: {
+                            let ip = alert.threat.sourceIp
+                            model.dismissCriticalAlert()
+                            Task { await model.block(ip: ip) }
+                        },
+                        onDismiss: { model.dismissCriticalAlert() }
+                    )
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
+
+                if let banner = model.statusBanner {
+                    StatusToast(message: banner) { model.statusBanner = nil }
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
             }
+            .padding(.horizontal, 12)
+            .padding(.top, 8)
         }
         .animation(.spring(response: 0.42, dampingFraction: 0.85), value: model.pendingCriticalAlert)
+        .animation(.spring(response: 0.35), value: model.statusBanner)
+    }
+}
+
+/// Transient confirmation for an action you just took ("Blocked 1.2.3.4"). Steps aside on
+/// its own; tapping clears it early rather than waiting it out.
+struct StatusToast: View {
+    let message: String
+    var onDismiss: () -> Void
+
+    var body: some View {
+        Text(message)
+            .font(.footnote.weight(.medium))
+            .foregroundStyle(NSTheme.text)
+            .multilineTextAlignment(.center)
+            // A block reports every firewall rule it wrote, by name. Three lines is enough
+            // to see what happened without the toast growing into a wall over the UI.
+            .lineLimit(3)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 11)
+            .glassEffect(.regular, in: .capsule)
+            .contentShape(.capsule)
+            .onTapGesture(perform: onDismiss)
+            // Keyed on the message: a second one arriving while the first is still up
+            // restarts the timer. `.onAppear` did not fire again for the reused Text, so
+            // the replacement message inherited no timer and stayed up for good.
+            .task(id: message) {
+                try? await Task.sleep(for: .seconds(2.5))
+                guard !Task.isCancelled else { return }
+                onDismiss()
+            }
     }
 }
 
@@ -271,26 +314,5 @@ struct MainTabView: View {
             .presentationDetents([.medium, .large])
             .preferredColorScheme(.dark)
         }
-        .overlay(alignment: .top) {
-            if let banner = model.statusBanner {
-                Text(banner)
-                    .font(.footnote.weight(.medium))
-                    .foregroundStyle(NSTheme.text)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 11)
-                    .glassEffect(.regular, in: .capsule)
-                    .padding(.top, 8)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .onAppear {
-                        Task {
-                            try? await Task.sleep(nanoseconds: 2_500_000_000)
-                            if model.statusBanner == banner {
-                                model.statusBanner = nil
-                            }
-                        }
-                    }
-            }
-        }
-        .animation(.spring(response: 0.35), value: model.statusBanner)
     }
 }

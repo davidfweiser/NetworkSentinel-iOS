@@ -41,6 +41,15 @@ final class AppModel {
     var allowAutoLogin = true
     /// In-app critical alert (popup) awaiting user acknowledgment.
     var pendingCriticalAlert: CriticalAlertPayload?
+    /// Holds the in-app Critical banner back until this time. Acting on a threat means the
+    /// user is already working the list; the poll right after a block reliably turns up the
+    /// next unseen Critical, and letting it slam a banner over the confirmation reads as
+    /// "your block did nothing". Notifications and the Dashboard attention card are
+    /// unaffected — only the banner waits its turn.
+    private var criticalBannerQuietUntil: Date?
+    /// Long enough to cover the action's own refresh and read the result, short enough that
+    /// a genuinely new incident is not sat on.
+    private let criticalBannerCooldown: TimeInterval = 20
     /// User preference: local notifications + in-app popups for Critical threats.
     /// Device-only — the server's own `criticalAlertsEnabled` (web ≥ 0.3.5) is separate.
     var criticalAlertsEnabled: Bool {
@@ -258,6 +267,11 @@ final class AppModel {
         pendingCriticalAlert = nil
     }
 
+    private var isCriticalBannerQuiet: Bool {
+        guard let until = criticalBannerQuietUntil else { return false }
+        return Date.now < until
+    }
+
     /// Apply server state and fire critical alerts for new Critical threats.
     func applyState(_ s: ServerState, server: ServerProfile) {
         state = s
@@ -283,7 +297,7 @@ final class AppModel {
         CriticalAlertService.shared.notify(serverName: server.name, threats: fresh)
 
         // In-app popup while using the app (queue first new critical).
-        if isAppActive {
+        if isAppActive, !isCriticalBannerQuiet {
             let t = fresh[0]
             pendingCriticalAlert = CriticalAlertPayload(
                 serverName: server.name,
@@ -526,6 +540,10 @@ final class AppModel {
 
     // MARK: - Actions
 
+    /// Actions taken *at* a threat, from the Critical banner or the attention card. These
+    /// start the banner cooldown; a settings toggle or an allowlist refresh does not.
+    private static let threatActions: Set<String> = ["block", "unblock", "clear_threats"]
+
     @discardableResult
     func runAction(
         _ action: String,
@@ -536,6 +554,11 @@ final class AppModel {
         direction: String? = nil
     ) async -> Bool {
         guard let server else { return false }
+        // Set before the request, not after: `runAction` refreshes on success, and that
+        // refresh is the one most likely to surface the next Critical.
+        if Self.threatActions.contains(action) {
+            criticalBannerQuietUntil = .now + criticalBannerCooldown
+        }
         do {
             let resp = try await api.action(
                 baseURL: server.baseURL,
