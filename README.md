@@ -4,7 +4,7 @@ Native **macOS** desktop app for **live network monitoring**, **remote peer trac
 
 > Awareness / monitoring tooling — not a full IDS/IPS replacement.
 
-macOS port of [davidfweiser/NetworkSentinel](https://github.com/davidfweiser/NetworkSentinel) (Linux Avalonia / original Windows WPF). Platform layers use **`lsof`/`netstat`/`nettop`**, **PF (`pfctl`)** elevated via **osascript** or **sudo**, the **macOS unified log** (`log stream`), and **`~/Library/Application Support/NetworkSentinel`**. Version **0.4.0**.
+macOS port of [davidfweiser/NetworkSentinel](https://github.com/davidfweiser/NetworkSentinel) (Linux Avalonia / original Windows WPF). Platform layers use **`lsof`/`netstat`/`nettop`**, **PF (`pfctl`)** elevated via **osascript** or **sudo**, the **macOS unified log** (`log stream`), and **`~/Library/Application Support/NetworkSentinel`**. Version **0.5.0**.
 
 ---
 
@@ -133,7 +133,7 @@ dotnet run -c Release -- -w 18765    # explicit port
 | **Ports** | Local listeners; one-click **Block port** |
 | **Firewall** | Managed rules grouped as In/Out pairs; manual IP and port blocking; **Restore allowlisted** |
 | **Allowlist** | Add/remove trusted domains and IPs; refresh the feed |
-| **Settings** | Monitoring on/off, page refresh speed, poll interval, geo lookups, auth-log monitoring, closed-port scan detection, critical threat alerts, auto-block + minimum severity, block direction, allowlist feed, **change master password**, **Remove all rules** |
+| **Settings** | Monitoring on/off, page refresh speed, poll interval, geo lookups, auth-log monitoring, closed-port scan detection, critical threat alerts, **HTTPS + DuckDNS remote access**, auto-block + minimum severity, block direction, allowlist feed, **change master password**, **Remove all rules** |
 
 **Master password.** The first visit creates one; every later visit requires it. Change it under **Settings → Master password**. If you can't reach a browser yet, set or reset it from the terminal:
 
@@ -144,6 +144,42 @@ sudo ./NetworkSentinel --set-master-password
 That requires root and resolves the real target user via `SUDO_USER` (using `dscl`), so the hash lands in **your** `~/Library/Application Support/NetworkSentinel/web-master.json` — not root's. Restart the web console afterwards so it picks up the change. The hash is PBKDF2-SHA256 (random salt, 200k iterations) — never plain text.
 
 The web console **refuses to block its own port**, which would otherwise cut off your browser mid-request and look like a crash.
+
+Failed password attempts are throttled **per client IP**: five wrong guesses trigger a lockout that doubles with each further attempt (1 minute up to 1 hour), and locked-out clients get `429` with a `Retry-After`. A fixed delay alone only slows one connection at a time — this caps a parallel guesser.
+
+### HTTPS and remote access (0.5.0)
+
+The console is served by **Kestrel**, so it can terminate TLS itself (macOS `HttpListener` cannot). HTTP and HTTPS are served side by side: the LAN keeps working on plain HTTP while requests that arrive **by hostname** are redirected to TLS — requests to a bare IP are left alone, since the certificate only covers the name.
+
+```bash
+./NetworkSentinel -w --https \
+    --tls-cert ~/Library/Application\ Support/NetworkSentinel/tls/myhost.duckdns.org.fullchain.cer \
+    --tls-key  ~/Library/Application\ Support/NetworkSentinel/tls/myhost.duckdns.org.key
+```
+
+| Flag | Meaning |
+|------|---------|
+| `--https` | Serve TLS in addition to HTTP |
+| `--https-port PORT` | TLS port (default **18443**; below 1024 needs root) |
+| `--tls-cert PATH` | PEM fullchain, or a `.pfx` / `.p12` bundle |
+| `--tls-key PATH` | PEM private key (omit for `.pfx`) |
+| `--tls-password PW` | Password for a `.pfx` / `.p12` |
+| `--no-https` | Force plain HTTP for this run |
+
+Flags win over `settings.json` for that run **without overwriting it**, so `--https` is safe to try. The same values live under **Settings → Remote access**; endpoint changes there take effect at the next restart. Certificate files are re-read when they change on disk, so an **ACME renewal applies without restarting** the console. Session cookies gain the `Secure` flag automatically when the request arrives over TLS.
+
+#### Free trusted certificate for a duckdns.org name
+
+[DuckDNS](https://www.duckdns.org) gives a free hostname that follows your public IP. The certificate comes from Let's Encrypt via a **DNS-01** challenge — proving control by writing a TXT record through the DuckDNS API, so **nothing has to be reachable on port 80**.
+
+```bash
+sudo ./NetworkSentinel --set-duckdns          # subdomain + token (token is prompted, not a flag)
+./scripts/issue-duckdns-cert.sh               # installs acme.sh if needed, issues + installs the cert
+```
+
+The token is stored in `~/Library/Application Support/NetworkSentinel/duckdns.json` with mode `0600`, is **never sent to the browser** (the settings page shows only whether one is saved), and never appears in the update URL's response. While the console runs it refreshes the A record every 5 minutes. `acme.sh` installs its own renewal cron entry.
+
+> **Before you forward a port.** This console can add and remove firewall rules on this Mac, and anyone who guesses the master password gets that control. A VPN or [Tailscale](https://tailscale.com) is the safer way to reach it from outside — `tailscale serve` even supplies a valid certificate with no port-forwarding at all. If you do forward a port, forward **only** the HTTPS one and use a long unique password.
 
 ### Release build
 
@@ -239,7 +275,11 @@ PF details:
 | `MainWindow.axaml` | Avalonia dashboard UI |
 | `Themes/Colors.axaml` | Palette ported from `NetworkSentinel-iOS/Theme.swift`, shared with the web console |
 | `Tui/TuiApp.cs` | Spectre.Console terminal UI (`--tui`) |
-| `Web/WebApp.cs` / `WebAuthStore.cs` | Headless browser console (`--web`) + master-password auth |
+| `Web/WebApp.cs` / `WebAuthStore.cs` | Headless browser console (`--web`, Kestrel) + master-password auth |
+| `Services/TlsCertificateProvider.cs` | Loads the console's PEM/PFX certificate; hot-reloads on renewal |
+| `Services/DuckDnsUpdater.cs` | DuckDNS dynamic-DNS refresh; token stored `0600` |
+| `Services/LoginThrottle.cs` | Per-IP lockout for the console's password endpoints |
+| `scripts/issue-duckdns-cert.sh` | Let's Encrypt DNS-01 issuance for a duckdns.org name |
 | `Program.cs` | Entry point; GUI / TUI / web routing, crash log |
 
 ---
