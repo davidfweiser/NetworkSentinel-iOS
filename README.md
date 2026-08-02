@@ -166,16 +166,18 @@ The console is served by **Kestrel**, so it can terminate TLS itself (macOS `Htt
 | `--tls-password PW` | Password for a `.pfx` / `.p12` |
 | `--no-https` | Force plain HTTP for this run |
 
-Flags win over `settings.json` for that run **without overwriting it**, so `--https` is safe to try. The same values live under **Settings → Remote access**; endpoint changes there take effect at the next restart. Certificate files are re-read when they change on disk, so an **ACME renewal applies without restarting** the console. Session cookies gain the `Secure` flag automatically when the request arrives over TLS.
+Flags win over `settings.json` for that run **without overwriting it**, so `--https` is safe to try. The same values live under **Settings → Remote access** in *both* front-ends — the desktop app and the web console — so you never have to hand-edit a config file; endpoint changes take effect at the console's next restart. Certificate files are re-read when they change on disk, so an **ACME renewal applies without restarting** the console. Session cookies gain the `Secure` flag automatically when the request arrives over TLS.
 
 #### Free trusted certificate for a duckdns.org name
 
 [DuckDNS](https://www.duckdns.org) gives a free hostname that follows your public IP. The certificate comes from Let's Encrypt via a **DNS-01** challenge — proving control by writing a TXT record through the DuckDNS API, so **nothing has to be reachable on port 80**.
 
 ```bash
-sudo ./NetworkSentinel --set-duckdns          # subdomain + token (token is prompted, not a flag)
+./NetworkSentinel --set-duckdns               # subdomain + token (token is prompted, not a flag)
 ./scripts/issue-duckdns-cert.sh               # installs acme.sh if needed, issues + installs the cert
 ```
+
+Run both as your normal user — **not** under `sudo`. They write into *your* `~/Library/Application Support/NetworkSentinel`, which is where the GUI and the console read from; under `sudo` the files would land in root's home instead and be invisible to the app.
 
 The token is stored in `~/Library/Application Support/NetworkSentinel/duckdns.json` with mode `0600`, is **never sent to the browser** (the settings page shows only whether one is saved), and never appears in the update URL's response. While the console runs it refreshes the A record every 5 minutes. `acme.sh` installs its own renewal cron entry.
 
@@ -228,6 +230,23 @@ PF details:
 | **Break-in Attempts** | Heuristic alerts with origin and method |
 | **Open Ports** | Listening TCP/UDP; optional inbound port block |
 | **Firewall & Block** | Manual IP/port rules, auto-block, allowlist, managed rule list |
+| **Settings** | Mirrors the web console's Settings tab, including **Remote access** (below) |
+
+### Remote access from the desktop Settings (0.5.0)
+
+**Settings → Remote access (web console)** configures HTTPS and DuckDNS without touching a config file or the command line:
+
+| Field | What goes in it |
+|-------|-----------------|
+| **DuckDNS subdomain** | Just the label — `myhost`, not `myhost.duckdns.org`. The switch arms the 5-minute refresh. |
+| **DuckDNS token** | Your token from duckdns.org, masked as you type. **Update now** tests it immediately and reports the result. |
+| **Serve the console over HTTPS** | On/off, with the TLS port beside it |
+| **Certificate** / **Private key** | The two paths printed by `scripts/issue-duckdns-cert.sh` |
+| **Redirect HTTP to HTTPS** | On by default |
+
+A status line at the top of the card shows certificate expiry, the live DuckDNS result, and the full console URL once both halves are configured. Certificate and port changes apply the next time the **web console** starts — the desktop app doesn't serve anything itself — but the **DuckDNS refresh runs in the desktop app too**, so the hostname stays current whenever either front-end is open.
+
+The token is written to `duckdns.json` (mode `0600`), not `settings.json`; the GUI, TUI, and web console all read the same file.
 
 ### Auto-block
 1. Click **Authorize firewall** (or allow the first password prompt when blocking).
@@ -271,7 +290,7 @@ PF details:
 | `Services/AuthLogMonitor.cs` | Failed-logon detection from the macOS unified log |
 | `Services/ProbeLogMonitor.cs` | Closed-port scan detection from the PF packet log |
 | `Services/AppSettings.cs` / `AppPaths.cs` | Application Support + JSON settings |
-| `ViewModels/MainViewModel.cs` | UI state, commands, auto-block wiring, Settings view |
+| `ViewModels/MainViewModel.cs` | UI state, commands, auto-block wiring, Settings view (incl. Remote access) |
 | `MainWindow.axaml` | Avalonia dashboard UI |
 | `Themes/Colors.axaml` | Palette ported from `NetworkSentinel-iOS/Theme.swift`, shared with the web console |
 | `Tui/TuiApp.cs` | Spectre.Console terminal UI (`--tui`) |
