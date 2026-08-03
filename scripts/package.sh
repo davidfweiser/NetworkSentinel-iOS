@@ -59,6 +59,12 @@ cp "$ROOT/scripts/install-from-package.sh" "$STAGE/install.sh"
 cp "$ROOT/scripts/uninstall-from-package.sh" "$STAGE/uninstall.sh"
 chmod +x "$STAGE/install.sh" "$STAGE/uninstall.sh"
 
+# Certificate helper travels with the package: Settings → Remote access shells out
+# to it for the "Issue certificate" button, and an installed copy has no source tree.
+cp "$ROOT/scripts/issue-duckdns-cert.sh" "$STAGE/issue-duckdns-cert.sh"
+cp "$ROOT/scripts/issue-duckdns-cert.sh" "$PUBLISH_DIR/issue-duckdns-cert.sh"
+chmod +x "$STAGE/issue-duckdns-cert.sh" "$PUBLISH_DIR/issue-duckdns-cert.sh"
+
 cat > "$STAGE/README-INSTALL.txt" <<EOF
 Network Sentinel ${VERSION} (${RID})
 ====================================

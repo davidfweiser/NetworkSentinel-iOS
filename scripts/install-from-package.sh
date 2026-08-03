@@ -33,6 +33,14 @@ mkdir -p "$LIB_DIR" "$BIN_DIR"
 rsync -a --delete "${APP_SRC}/" "${LIB_DIR}/"
 chmod +x "${LIB_DIR}/NetworkSentinel"
 
+# Certificate helper lives beside the binary: Settings → Remote access shells out
+# to it for the "Issue certificate" button, and it has to exist after an install
+# where no source tree is present.
+if [[ -f "${SCRIPT_DIR}/issue-duckdns-cert.sh" ]]; then
+  cp "${SCRIPT_DIR}/issue-duckdns-cert.sh" "${LIB_DIR}/issue-duckdns-cert.sh"
+  chmod +x "${LIB_DIR}/issue-duckdns-cert.sh"
+fi
+
 ln -sfn "${LIB_DIR}/NetworkSentinel" "${BIN_DIR}/networksentinel"
 
 # Uninstall helper

@@ -4,7 +4,7 @@ Native **macOS** desktop app for **live network monitoring**, **remote peer trac
 
 > Awareness / monitoring tooling — not a full IDS/IPS replacement.
 
-macOS port of [davidfweiser/NetworkSentinel](https://github.com/davidfweiser/NetworkSentinel) (Linux Avalonia / original Windows WPF). Platform layers use **`lsof`/`netstat`/`nettop`**, **PF (`pfctl`)** elevated via **osascript** or **sudo**, the **macOS unified log** (`log stream`), and **`~/Library/Application Support/NetworkSentinel`**. Version **0.5.0**.
+macOS port of [davidfweiser/NetworkSentinel](https://github.com/davidfweiser/NetworkSentinel) (Linux Avalonia / original Windows WPF). Platform layers use **`lsof`/`netstat`/`nettop`**, **PF (`pfctl`)** elevated via **osascript** or **sudo**, the **macOS unified log** (`log stream`), and **`~/Library/Application Support/NetworkSentinel`**. Version **0.5.1**.
 
 ---
 
@@ -172,12 +172,20 @@ Flags win over `settings.json` for that run **without overwriting it**, so `--ht
 
 [DuckDNS](https://www.duckdns.org) gives a free hostname that follows your public IP. The certificate comes from Let's Encrypt via a **DNS-01** challenge — proving control by writing a TXT record through the DuckDNS API, so **nothing has to be reachable on port 80**.
 
+**From the app (0.5.1).** Once the subdomain and token are saved, **Settings → Remote access → Issue certificate** does the whole thing — in the desktop app and in the web console. It installs `acme.sh` on first run (registering the account against the email beside the button), issues the certificate, and fills in the two path fields. The button reads *Issuing…* while it runs; expect a few minutes waiting on DNS propagation. Only one issuance runs at a time — concurrent ACME runs for the same name fight over the same TXT record.
+
+If it fails, the status line says why rather than pointing at a terminal: a rejected DuckDNS token, a DNS record that didn't propagate, and Let's Encrypt rate-limiting are each named outright, followed by acme.sh's own last lines. The full transcript lands in `~/Library/Application Support/NetworkSentinel/logs/cert-issue.log`.
+
+**From a terminal**, the same script does the same work:
+
 ```bash
 ./NetworkSentinel --set-duckdns               # subdomain + token (token is prompted, not a flag)
 ./scripts/issue-duckdns-cert.sh               # installs acme.sh if needed, issues + installs the cert
 ```
 
 Run both as your normal user — **not** under `sudo`. They write into *your* `~/Library/Application Support/NetworkSentinel`, which is where the GUI and the console read from; under `sudo` the files would land in root's home instead and be invisible to the app.
+
+`acme.sh` exits 2 when a certificate is still current and it skips the renewal. That is not a failure — the script installs the existing certificate and says so. Re-issue early with `NS_FORCE_RENEW=1`, but sparingly: Let's Encrypt rate-limits repeat issuance for the same name.
 
 The token is stored in `~/Library/Application Support/NetworkSentinel/duckdns.json` with mode `0600`, is **never sent to the browser** (the settings page shows only whether one is saved), and never appears in the update URL's response. While the console runs it refreshes the A record every 5 minutes. `acme.sh` installs its own renewal cron entry.
 
@@ -240,8 +248,9 @@ PF details:
 |-------|-----------------|
 | **DuckDNS subdomain** | Just the label — `myhost`, not `myhost.duckdns.org`. The switch arms the 5-minute refresh. |
 | **DuckDNS token** | Your token from duckdns.org, masked as you type. **Update now** tests it immediately and reports the result. |
+| **Issue certificate** | Runs the Let's Encrypt issuance and fills in the two paths below. The email beside it is used only on first run, to register the ACME account. |
 | **Serve the console over HTTPS** | On/off, with the TLS port beside it |
-| **Certificate** / **Private key** | The two paths printed by `scripts/issue-duckdns-cert.sh` |
+| **Certificate** / **Private key** | Filled in by **Issue certificate**; editable if the files live elsewhere |
 | **Redirect HTTP to HTTPS** | On by default |
 
 A status line at the top of the card shows certificate expiry, the live DuckDNS result, and the full console URL once both halves are configured. Certificate and port changes apply the next time the **web console** starts — the desktop app doesn't serve anything itself — but the **DuckDNS refresh runs in the desktop app too**, so the hostname stays current whenever either front-end is open.

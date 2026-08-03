@@ -620,8 +620,9 @@ internal static class Program
               ./NetworkSentinel --tui
               ./NetworkSentinel -w
               ./NetworkSentinel -w 18765
-              ./NetworkSentinel -w --https --tls-cert ~/.acme.sh/myhost.duckdns.org_ecc/fullchain.cer \
-                                        --tls-key  ~/.acme.sh/myhost.duckdns.org_ecc/myhost.duckdns.org.key
+              ./NetworkSentinel -w --https \
+                  --tls-cert ~/Library/Application\ Support/NetworkSentinel/tls/myhost.duckdns.org.fullchain.cer \
+                  --tls-key  ~/Library/Application\ Support/NetworkSentinel/tls/myhost.duckdns.org.key
             """);
     }
 

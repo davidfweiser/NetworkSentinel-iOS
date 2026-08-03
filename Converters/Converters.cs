@@ -72,3 +72,13 @@ public sealed class StringNotEmptyConverter : IValueConverter
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
         => throw new NotSupportedException();
 }
+
+/// <summary>Label for the Issue certificate button; issuance runs long enough to need a busy state.</summary>
+public sealed class IssuingToTextConverter : IValueConverter
+{
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => value is true ? "Issuing…" : "Issue certificate";
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
