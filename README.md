@@ -49,6 +49,18 @@ Set **Settings → Webhook URL** to push Critical threats off the machine — th
 
 **Critical alerts (on by default).** A `Critical` threat is announced actively rather than just added to a list: the desktop app posts a macOS notification, and the web console badges the tab title (`⚠ 2 · Network Sentinel`) and raises a browser notification. Repeats of the same source + threat type are suppressed for 5 minutes so a burst can't spam you. Turn it off under **Settings → Critical threat alerts**.
 
+### Remote access over HTTPS (0.5.0 – 0.5.1)
+Reach the browser console from outside this Mac without hand-editing config or leaving the app:
+
+| | |
+|---|---|
+| **HTTPS** | Kestrel terminates TLS alongside the plain-HTTP port; hostname requests redirect, bare-IP requests stay on HTTP. Certificates reload on renewal without a restart. |
+| **DuckDNS** | A free hostname that follows your public IP, refreshed every 5 minutes by whichever front-end is running. Token stored `0600` in its own file, never sent to the browser. |
+| **Issue certificate** (0.5.1) | One button in **Settings → Remote access** runs the whole Let's Encrypt DNS-01 flow and fills in the certificate paths. Failures name the cause; the transcript lands in `logs/cert-issue.log`. |
+| **Login lockout** | Five wrong master-password attempts lock that client IP, doubling from 1 minute to 1 hour. |
+
+Full setup is under [HTTPS and remote access](#https-and-remote-access-050) below.
+
 ### Firewall & block
 - **Block / unblock** remote IPs (inbound, outbound, or both)
 - **Block local ports** (TCP/UDP)
@@ -133,7 +145,7 @@ dotnet run -c Release -- -w 18765    # explicit port
 | **Ports** | Local listeners; one-click **Block port** |
 | **Firewall** | Managed rules grouped as In/Out pairs; manual IP and port blocking; **Restore allowlisted** |
 | **Allowlist** | Add/remove trusted domains and IPs; refresh the feed |
-| **Settings** | Monitoring on/off, page refresh speed, poll interval, geo lookups, auth-log monitoring, closed-port scan detection, critical threat alerts, **HTTPS + DuckDNS remote access**, auto-block + minimum severity, block direction, allowlist feed, **change master password**, **Remove all rules** |
+| **Settings** | Monitoring on/off, page refresh speed, poll interval, geo lookups, auth-log monitoring, closed-port scan detection, critical threat alerts, **HTTPS + DuckDNS remote access** (incl. one-click **Issue certificate**), auto-block + minimum severity, block direction, allowlist feed, **change master password**, **Remove all rules** |
 
 **Master password.** The first visit creates one; every later visit requires it. Change it under **Settings → Master password**. If you can't reach a browser yet, set or reset it from the terminal:
 
@@ -205,6 +217,41 @@ Self-contained (no system .NET runtime needed):
 ./scripts/package.sh              # osx-arm64 on Apple Silicon
 ./scripts/package.sh osx-x64      # Intel Macs
 ```
+
+### Installing the package
+
+`package.sh` produces `dist/networksentinel-<version>-<rid>.tar.gz` plus a ready `dist/Network Sentinel.app` you can drag to Applications. To install from the tarball on a Mac with no .NET:
+
+```bash
+tar xzf networksentinel-0.5.1-osx-arm64.tar.gz
+cd networksentinel-0.5.1-osx-arm64
+sudo ./install.sh                        # /Applications + /usr/local/bin
+./install.sh --user                      # ~/Applications + ~/.local/bin, no root
+sudo ./install.sh --desktop-shortcut     # also drop a shortcut on the Desktop
+sudo ./install.sh --no-desktop           # CLI only (headless / server)
+```
+
+| Flag | Meaning |
+|------|---------|
+| `--user` | Install under `~/.local` and `~/Applications` — no root |
+| `--desktop-shortcut` | Also put a **Network Sentinel** shortcut on the Desktop (opt-in) |
+| `--no-desktop` | Skip the Applications bundle entirely; CLI layout under `/usr/local/lib` |
+
+By default the install *is* the app bundle: `Network Sentinel.app` holds the payload in `Contents/MacOS`, and `networksentinel` on your `PATH` is a symlink into it, so the GUI and the command are always the same build. That is what puts the app in Launchpad and Spotlight with its own icon — a bundle that merely launched a binary elsewhere would lose its identity, because macOS finds an app's `Info.plist` by walking up from the running executable's path.
+
+`--desktop-shortcut` is opt-in because a headless Mac has no Desktop and no use for an icon. Two details the installer handles that a plain `cp` does not:
+
+- The shortcut is a **symlink to the bundle**, not a copy — an upgrade replaces the bundle in place and the shortcut keeps working, where a copied app goes stale. A Finder *alias* would need an Automation grant the installer can't get from a `sudo` shell; Finder launches a symlinked `.app` just the same.
+- Under `sudo` the shortcut goes to `SUDO_USER`'s Desktop, not root's, where nobody would find it.
+
+Uninstall removes the bundle, the symlink and the shortcut:
+
+```bash
+sudo networksentinel-uninstall      # or:  sudo ./uninstall.sh
+./uninstall.sh --user               # user install
+```
+
+The bundle is **ad-hoc signed** (`codesign -s -`). That is enough for a locally built app to run on Apple Silicon, which refuses unsigned binaries outright — it is not distribution signing, so a copy that is *downloaded* rather than built here still gets quarantined.
 
 ---
 
@@ -307,7 +354,8 @@ The token is written to `duckdns.json` (mode `0600`), not `settings.json`; the G
 | `Services/TlsCertificateProvider.cs` | Loads the console's PEM/PFX certificate; hot-reloads on renewal |
 | `Services/DuckDnsUpdater.cs` | DuckDNS dynamic-DNS refresh; token stored `0600` |
 | `Services/LoginThrottle.cs` | Per-IP lockout for the console's password endpoints |
-| `scripts/issue-duckdns-cert.sh` | Let's Encrypt DNS-01 issuance for a duckdns.org name |
+| `Services/CertIssuanceService.cs` | Runs the issuance script behind the **Issue certificate** button; diagnoses acme.sh failures |
+| `scripts/issue-duckdns-cert.sh` | Let's Encrypt DNS-01 issuance for a duckdns.org name (also driven non-interactively by the button) |
 | `Program.cs` | Entry point; GUI / TUI / web routing, crash log |
 
 ---

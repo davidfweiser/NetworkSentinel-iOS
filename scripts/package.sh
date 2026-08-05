@@ -65,6 +65,28 @@ cp "$ROOT/scripts/issue-duckdns-cert.sh" "$STAGE/issue-duckdns-cert.sh"
 cp "$ROOT/scripts/issue-duckdns-cert.sh" "$PUBLISH_DIR/issue-duckdns-cert.sh"
 chmod +x "$STAGE/issue-duckdns-cert.sh" "$PUBLISH_DIR/issue-duckdns-cert.sh"
 
+# --- App bundle --------------------------------------------------------------
+# install.sh builds the bundle on the target so it lands with the right paths,
+# but the icon is rasterised here: sips and iconutil are the only part of the
+# job that wants the source Assets, which the package does not carry.
+cp "$ROOT/scripts/make-app-bundle.sh" "$STAGE/make-app-bundle.sh"
+chmod +x "$STAGE/make-app-bundle.sh"
+echo "$VERSION" > "$STAGE/VERSION"
+
+echo "==> Building app bundle…"
+APP_BUNDLE="${DIST_DIR}/Network Sentinel.app"
+"$ROOT/scripts/make-app-bundle.sh" \
+  --payload "$PUBLISH_DIR" \
+  --out "$APP_BUNDLE" \
+  --version "$VERSION" \
+  --icon "$ROOT/Assets/icons/icon-512.png" \
+  --helper "$ROOT/scripts/issue-duckdns-cert.sh"
+
+# Reuse the icon just built rather than rasterising it a second time on install.
+if [[ -f "${APP_BUNDLE}/Contents/Resources/AppIcon.icns" ]]; then
+  cp "${APP_BUNDLE}/Contents/Resources/AppIcon.icns" "$STAGE/AppIcon.icns"
+fi
+
 cat > "$STAGE/README-INSTALL.txt" <<EOF
 Network Sentinel ${VERSION} (${RID})
 ====================================
@@ -76,8 +98,14 @@ Quick install (system-wide, needs sudo):
   cd ${NAME}
   sudo ./install.sh
 
-User install (no root):
-  ./install.sh --user
+Other install options:
+  ./install.sh --user                        # ~/.local + ~/Applications, no root
+  sudo ./install.sh --desktop-shortcut       # also put a shortcut on the Desktop
+  sudo ./install.sh --no-desktop             # CLI only (headless / server)
+
+The install puts "Network Sentinel.app" in /Applications (or ~/Applications with
+--user) so it shows up in Launchpad and Spotlight, and links the same build as
+the "networksentinel" command.
 
 Run after install:
   networksentinel --tui          # terminal UI
