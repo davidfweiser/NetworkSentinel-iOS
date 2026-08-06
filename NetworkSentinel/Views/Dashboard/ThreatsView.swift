@@ -59,21 +59,31 @@ struct ThreatsView: View {
                     .scrollContentBackground(.hidden)
                 }
             }
+            .nsAsleepDimmed(model.isAsleep)
             .background { AmbientField() }
             .navigationTitle("Threats")
             .searchable(text: $query, prompt: "IP, title, type")
             // Segmented filter must not live in the nav toolbar — on a phone it
             // collapses into an unreadable circle (All/High+/Critical → "A t C").
+            // The sleep banner shares the inset so it stays above the list rather than
+            // landing between the filter and the rows it is warning about.
             .safeAreaInset(edge: .top, spacing: 0) {
-                Picker("Filter", selection: $filter) {
-                    ForEach(ThreatFilter.allCases) { f in
-                        Text(f.rawValue).tag(f)
+                VStack(spacing: 8) {
+                    if model.isAsleep {
+                        SleepBanner { Task { await model.wakeConsole() } }
+                            .transition(.move(edge: .top).combined(with: .opacity))
                     }
+                    Picker("Filter", selection: $filter) {
+                        ForEach(ThreatFilter.allCases) { f in
+                            Text(f.rawValue).tag(f)
+                        }
+                    }
+                    .pickerStyle(.segmented)
                 }
-                .pickerStyle(.segmented)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
                 .background(NSTheme.bg)
+                .animation(.easeInOut(duration: 0.25), value: model.isAsleep)
             }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {

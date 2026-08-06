@@ -9,7 +9,8 @@ Connect to one or more hosts running the headless web UI (`-w` / `--web`), sign 
 | Area | What you get |
 |------|----------------|
 | **Multi-server** | Add/edit/delete servers; switch between home, lab, VPS, etc. |
-| **Dashboard** | Needs-attention card with one-tap block, live stats, scrubbable activity chart, pause/resume, auto-block controls and rule expiry |
+| **Dashboard** | Needs-attention card with one-tap block, live stats, scrubbable activity chart, sleep/wake, pause/resume, auto-block controls and rule expiry |
+| **Sleep / Wake** | Stops every watcher on the server and parks the app — dimmed data, an Asleep banner on each live tab, a 30-second heartbeat, no Critical alerts. Firewall blocks stay in force |
 | **Detection** | Toggle geo lookups, auth-log brute-force monitoring, closed-port scan detection, and the server's own Critical warnings, with its status text inline |
 | **Intrusion detection** | Threat-intel blocklists, new-listener alerts, process reputation, ARP/gateway watch, launch-item watch, exfiltration monitor with threshold, honeypot decoy ports (web 0.4+) |
 | **Threats** | Severity filters, search, clear alerts, block source IP |
@@ -26,6 +27,7 @@ Talks to the same JSON API as the browser console (Linux, Windows & macOS web **
 - `POST /api/auth/change-password` (0.3.2+) — `currentPassword`, `newPassword`, `confirm`
 - `GET /api/state` (settings include `geoLookupEnabled` / `allowlistUseRemoteFeed` / `authLogMonitorEnabled` + `authLogStatus` / `probeLogEnabled` + `probeLogStatus` / `criticalAlertsEnabled`, and on 0.4+ the intrusion-detection group below; threats include `ts`; rules include `isProtected`, `address`, `ports`)
 - `POST /api/action` — `block`, `unblock`, `set_setting`, `block_port`, `unblock_port`, `remove_rule`, `remove_all_rules`, allowlist, auto-block, …
+- `POST /api/action` — `sleep` / `wake` (web 0.5.1+), falling back to the `pause` / `resume` names every 0.3–0.5.0 server drives the same monitor state under
 
 `set_setting` carries booleans as `"true"`/`"false"` and the 0.4 numeric/text settings as their literal value, including the empty string that switches the webhook off.
 
@@ -59,7 +61,24 @@ Two more 0.4 settings live where they belong rather than in that card: **auto-bl
 
 **Threats that are not an address.** The new detectors that watch the machine itself — new listener, launch-item change — report `127.0.0.1` rather than a peer, and the server refuses to firewall loopback. Wherever the app would otherwise offer **Block** for one of those (needs-attention card, threat list, in-app Critical banner), it shows what was detected instead, so the primary action is never a button that can only fail. Threat rows also carry a per-type icon, since 0.4 raised the number of distinct threat types from eight to fifteen.
 
-Linux and Windows are still on 0.3.5 as of this writing; these rows appear as soon as those builds ship the same settings.
+Linux and Windows carry the same suite as of web 0.5.1.
+
+### Sleep / Wake
+
+The web console's header **Sleep ⇄ Wake** button, in the Dashboard controls and again under More → Monitoring.
+
+Sleeping stops *everything the server watches* — the connection/port poll plus the auth-log, closed-port probe, ARP, launch-item, exfiltration and honeypot watchers — so asleep means nothing is observed, not a frozen dashboard. **Firewall blocks stay in force**: sleeping stops watching, it never unblocks an address the machine is already protected from.
+
+The app parks itself alongside the server, which is what makes Sleep feel different from a plain Pause:
+
+- live readings dim on every data tab, so stale rows cannot be read as current traffic
+- an **Asleep** banner explains what stopped and carries its own Wake button
+- the 2.5-second poll drops to a 30-second heartbeat — that heartbeat is what lets a wake from the web console or another device still reach this phone
+- Critical alerts are held: a sleeping console detects nothing, so anything left in its list is history
+
+Sleep applies to the process you pressed it in, and the server does not persist it — restarting the service comes back up monitoring. **Pause/Resume** is still there and unchanged (monitor off, app keeps refreshing live); it is hidden while asleep, where Wake is the only sensible way back.
+
+On servers older than web 0.5.1 the app sends `pause` / `resume` instead, which is the same monitor state under its earlier name.
 
 ### Two kinds of Critical alert
 

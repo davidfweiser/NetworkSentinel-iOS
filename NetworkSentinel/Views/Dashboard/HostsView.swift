@@ -77,6 +77,7 @@ struct HostsView: View {
                     .scrollContentBackground(.hidden)
                 }
             }
+            .nsSleepAware(model.isAsleep) { Task { await model.wakeConsole() } }
             .background { AmbientField() }
             .navigationTitle("Hosts")
             .searchable(text: $query, prompt: "IP, name, geo")

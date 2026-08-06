@@ -59,6 +59,28 @@ struct MoreView: View {
                     .listRowBackground(NSTheme.row)
                 }
 
+                // The web console keeps the same control in two places — the header button
+                // and Settings → Live monitoring — because the tab you are on when you
+                // want it is rarely the one holding it. Same reasoning here.
+                Section {
+                    Button {
+                        Task { await model.toggleSleep() }
+                    } label: {
+                        Label(
+                            model.isAsleep ? "Wake console" : "Put console to sleep",
+                            systemImage: model.isAsleep ? "sun.max.fill" : "moon.zzz.fill"
+                        )
+                    }
+                    .listRowBackground(NSTheme.row)
+                    .disabled(model.server == nil)
+                } header: {
+                    Text("Monitoring")
+                } footer: {
+                    Text(model.isAsleep
+                         ? "Asleep: every watcher on the server is stopped, and this app drops to a 30-second heartbeat so a wake from the web console still reaches you. Firewall blocks stay in force."
+                         : "Sleep stops everything the server watches — connections, listening ports, auth log, port-scan probes, ARP, launch items, exfiltration and honeypot — and quiets this app until you wake it. Firewall blocks stay in force: sleeping stops watching, it never unblocks anything.")
+                }
+
                 Section {
                     Toggle(isOn: Binding(
                         get: { model.criticalAlertsEnabled },

@@ -365,6 +365,13 @@ extension Array where Element: Identifiable, Element.ID == String {
 struct ActionResponse: Codable {
     let ok: Bool
     let message: String?
+
+    /// The server's reply to a verb it has never heard of (`Unknown action: sleep`).
+    /// Distinguishes "this server is older than the feature" from "the action failed",
+    /// which is what lets a newer action name fall back to its older alias.
+    var isUnknownAction: Bool {
+        (message ?? "").localizedCaseInsensitiveContains("unknown action")
+    }
 }
 
 // MARK: - Threat helpers

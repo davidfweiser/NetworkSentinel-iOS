@@ -46,6 +46,7 @@ struct ConnectionsView: View {
                     .scrollContentBackground(.hidden)
                 }
             }
+            .nsSleepAware(model.isAsleep) { Task { await model.wakeConsole() } }
             .background { AmbientField() }
             .navigationTitle("Connections")
             .searchable(text: $query, prompt: "Process, IP, state")

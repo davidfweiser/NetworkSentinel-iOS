@@ -206,6 +206,73 @@ struct SeverityBadge: View {
     }
 }
 
+// MARK: - Sleep
+
+/// What the console is doing while asleep, and the one control worth pressing. Carries its
+/// own Wake button for the same reason the web console's banner does: the tab you are
+/// looking at is rarely the one holding the sleep toggle.
+struct SleepBanner: View {
+    var onWake: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "moon.zzz.fill")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(NSTheme.warning)
+                .padding(.top, 1)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Asleep")
+                    .font(.eyebrow)
+                    .textCase(.uppercase)
+                    .tracking(0.8)
+                    .foregroundStyle(NSTheme.warning)
+                Text("Monitoring is stopped — no connections, ports, or threats are being watched. Firewall blocks stay in force.")
+                    .font(.caption)
+                    .foregroundStyle(NSTheme.mutedOnTint)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 4)
+
+            Button("Wake", action: onWake)
+                .font(.caption.weight(.bold))
+                .buttonStyle(.glassProminent)
+                .tint(NSTheme.warning)
+        }
+        .padding(14)
+        .glassEffect(Glass.regular.tint(NSTheme.warning.opacity(0.22)), in: .rect(cornerRadius: 20))
+    }
+}
+
+extension View {
+    /// Live data steps back while the console is asleep. The numbers on screen are the last
+    /// ones observed, not current traffic, and at full strength a stale table reads as live.
+    /// Still interactive — a firewall block is as valid asleep as awake.
+    func nsAsleepDimmed(_ asleep: Bool) -> some View {
+        self
+            .opacity(asleep ? 0.42 : 1)
+            .saturation(asleep ? 0.45 : 1)
+            .animation(.easeInOut(duration: 0.3), value: asleep)
+    }
+
+    /// Everything a tab of live server data needs while the console is asleep: the banner
+    /// on top, the stale data dimmed underneath.
+    func nsSleepAware(_ asleep: Bool, onWake: @escaping () -> Void) -> some View {
+        self
+            .nsAsleepDimmed(asleep)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if asleep {
+                    SleepBanner(onWake: onWake)
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 8)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+            .animation(.easeInOut(duration: 0.25), value: asleep)
+    }
+}
+
 struct EmptyStateView: View {
     let icon: String
     let title: String

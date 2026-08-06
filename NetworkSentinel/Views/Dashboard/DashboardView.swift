@@ -11,20 +11,29 @@ struct DashboardView: View {
     private var stats: StatsInfo? { model.state?.stats }
     private var settings: SettingsInfo? { model.state?.settings }
     private var monitoring: Bool { settings?.isMonitoring ?? stats?.isMonitoring ?? false }
+    private var asleep: Bool { model.isAsleep }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 14) {
                     statusHeader
-                    attentionCard
-                    statsGrid
-                    activityCard
+                    if asleep {
+                        SleepBanner { Task { await model.wakeConsole() } }
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+                    // Live readings dim while asleep; the controls below stay at full
+                    // strength, because they hold the other way back to Wake — the same
+                    // split the web console makes between its tables and Settings.
+                    attentionCard.nsAsleepDimmed(asleep)
+                    statsGrid.nsAsleepDimmed(asleep)
+                    activityCard.nsAsleepDimmed(asleep)
                     controlsCard
                     detectionCard
                     intrusionCard
-                    recentThreats
+                    recentThreats.nsAsleepDimmed(asleep)
                 }
+                .animation(.easeInOut(duration: 0.25), value: asleep)
                 .padding(.horizontal, 16)
                 .padding(.bottom, 28)
             }
@@ -114,21 +123,30 @@ struct DashboardView: View {
         .nsCard()
     }
 
+    /// The server stops the same way either way, so the wording is the only thing that
+    /// tells you whether this phone parked itself along with it.
+    private var monitoringLabel: String {
+        if asleep { return "Asleep" }
+        return monitoring ? "Monitoring" : "Paused"
+    }
+
     private var monitoringPill: some View {
-        HStack(spacing: 6) {
+        let tint = monitoring ? NSTheme.success : NSTheme.warning
+        return HStack(spacing: 6) {
             Circle()
-                .fill(monitoring ? NSTheme.success : NSTheme.warning)
+                .fill(tint)
                 .frame(width: 7, height: 7)
-            Text(monitoring ? "Monitoring" : "Paused")
+            Text(monitoringLabel)
                 .font(.system(size: 11, weight: .semibold))
                 .textCase(.uppercase)
                 .tracking(0.6)
-                .foregroundStyle(monitoring ? NSTheme.success : NSTheme.warning)
+                .foregroundStyle(tint)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
-        .background((monitoring ? NSTheme.success : NSTheme.warning).opacity(0.14), in: .capsule)
+        .background(tint.opacity(0.14), in: .capsule)
         .animation(.snappy, value: monitoring)
+        .animation(.snappy, value: asleep)
     }
 
     // MARK: - Needs attention
@@ -265,14 +283,28 @@ struct DashboardView: View {
                     columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)],
                     spacing: 10
                 ) {
+                    // Sleep leads, as it does in the web console header.
                     controlButton(
-                        title: monitoring ? "Pause" : "Resume",
-                        icon: monitoring ? "pause.fill" : "play.fill",
-                        tint: monitoring ? NSTheme.warning : NSTheme.success
+                        title: asleep ? "Wake" : "Sleep",
+                        icon: asleep ? "sun.max.fill" : "moon.zzz.fill",
+                        tint: asleep ? NSTheme.warning : NSTheme.accent
                     ) {
-                        await model.toggleMonitor()
+                        await model.toggleSleep()
                     }
-                    .glassEffectID("monitor", in: glassNamespace)
+                    .glassEffectID("sleep", in: glassNamespace)
+
+                    // Asleep, Wake is the way back — a second button offering to un-stop
+                    // the same monitor would just be two names for one thing.
+                    if !asleep {
+                        controlButton(
+                            title: monitoring ? "Pause" : "Resume",
+                            icon: monitoring ? "pause.fill" : "play.fill",
+                            tint: monitoring ? NSTheme.warning : NSTheme.success
+                        ) {
+                            await model.toggleMonitor()
+                        }
+                        .glassEffectID("monitor", in: glassNamespace)
+                    }
 
                     controlButton(
                         title: (settings?.autoBlockEnabled ?? false) ? "Auto-block on" : "Auto-block off",

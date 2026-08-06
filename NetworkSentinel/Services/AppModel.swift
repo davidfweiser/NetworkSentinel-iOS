@@ -63,14 +63,54 @@ final class AppModel {
     /// Last time a system background poll finished (for UI).
     var lastBackgroundPollAt: Date?
 
+    /// Servers this phone has put to sleep, by id.
+    ///
+    /// The server reports one `isMonitoring` flag and treats `sleep` and `pause` as the
+    /// same call, so which of the two stopped it is only knowable here. Persisted: coming
+    /// back from a relaunch polling a console you deliberately parked would undo the point.
+    private(set) var sleepingServerIds: Set<UUID> = []
+    private static let sleepingKey = "networksentinel.sleepingServers"
+
+    /// Foreground poll while awake.
+    private let awakePollInterval: TimeInterval = 2.5
+    /// Foreground poll while asleep. A sleeping server observes nothing, so there is no new
+    /// data to draw — but the heartbeat has to stay, or a wake from the web console or
+    /// another device would never reach this phone. Same 30s the web console drops to.
+    private let sleepPollInterval: TimeInterval = 30
+
     var server: ServerProfile? { store.selectedServer }
 
+    init() {
+        let stored = UserDefaults.standard.stringArray(forKey: Self.sleepingKey) ?? []
+        sleepingServerIds = Set(stored.compactMap(UUID.init(uuidString:)))
+    }
+
     // MARK: - Derived state for the UI
+
+    /// True when this phone has the selected server asleep.
+    var isAsleep: Bool {
+        guard let server else { return false }
+        return sleepingServerIds.contains(server.id)
+    }
+
+    func isAsleep(_ server: ServerProfile) -> Bool { sleepingServerIds.contains(server.id) }
+
+    private func setSleeping(_ asleep: Bool, for id: UUID) {
+        if asleep {
+            sleepingServerIds.insert(id)
+        } else {
+            sleepingServerIds.remove(id)
+        }
+        UserDefaults.standard.set(sleepingServerIds.map(\.uuidString), forKey: Self.sleepingKey)
+    }
 
     /// Highest severity the server is currently reporting. Drives the app's tint and the
     /// ambient background, so the whole surface reads as calm or alarmed at a glance.
     var liveSeverity: ThreatSeverity {
-        (state?.threats ?? []).reduce(ThreatSeverity.none) {
+        // Asleep, every threat still on screen is history — the server stopped watching.
+        // Pulsing the whole app red over it would read as a live incident.
+        guard !isAsleep else { return .none }
+        return (state?.threats ?? []).reduce(ThreatSeverity.none) {
             Swift.max($0, ThreatSeverity.from(level: $1.level, levelNum: $1.levelNum))
         }
     }
@@ -260,6 +300,8 @@ final class AppModel {
         pendingCriticalAlert = nil
         allowAutoLogin = true
         evaluateInitialAuthGate()
+        // Sleep is per-server: switching to a parked console must not keep the 2.5s poll.
+        pollInterval = isAsleep ? sleepPollInterval : awakePollInterval
         restartPolling()
     }
 
@@ -281,11 +323,21 @@ final class AppModel {
         authPhase = .authenticated
         lastError = nil
         store.markConnected(server.id)
+        // A console can be woken from the web UI, another device, or a service restart —
+        // sleep is runtime state the server does not persist. Monitoring running again is
+        // the only proof that matters, so it clears the flag wherever the wake came from.
+        if s.settings?.isMonitoring == true || s.stats?.isMonitoring == true {
+            setSleeping(false, for: server.id)
+        }
+        syncSleepMode()
         processCriticalThreats(from: s, server: server)
     }
 
     private func processCriticalThreats(from s: ServerState, server: ServerProfile) {
         guard criticalAlertsEnabled else { return }
+        // A sleeping console detects nothing, so whatever is still in its list is history.
+        // Alerting on it would make Sleep a source of alarms instead of quiet.
+        guard !isAsleep(server) else { return }
         let threats = s.threats ?? []
         let fresh = CriticalAlertService.shared.newCriticalThreats(
             serverId: server.id,
@@ -327,6 +379,18 @@ final class AppModel {
 
     func restartPolling() {
         startPolling()
+    }
+
+    /// Match the poll rate to the console's state. Every state update funnels through
+    /// `applyState`, so this is also where the app learns it is asleep — including a sleep
+    /// triggered from the web console or a second device.
+    private func syncSleepMode() {
+        let wanted = isAsleep ? sleepPollInterval : awakePollInterval
+        guard pollInterval != wanted else { return }
+        pollInterval = wanted
+        // The loop is already sleeping for the old interval; restart so the new rate takes
+        // effect now rather than up to 30 seconds late.
+        if pollTask != nil { restartPolling() }
     }
 
     // MARK: - Refresh / auth
@@ -553,14 +617,37 @@ final class AppModel {
         fieldName: String? = nil,
         direction: String? = nil
     ) async -> Bool {
-        guard let server else { return false }
-        // Set before the request, not after: `runAction` refreshes on success, and that
+        guard let resp = await sendAction(
+            action,
+            ip: ip,
+            value: value,
+            kind: kind,
+            fieldName: fieldName,
+            direction: direction
+        ) else { return false }
+        return await applyActionResult(resp)
+    }
+
+    /// Raw `/api/action` call. Returns the server's reply, or nil when the request itself
+    /// failed — auth and transport errors are already reported to the UI here. Kept
+    /// separate from `applyActionResult` so a caller can look at the reply before it turns
+    /// into a banner, which is what the sleep/wake fallback needs.
+    private func sendAction(
+        _ action: String,
+        ip: String? = nil,
+        value: String? = nil,
+        kind: String? = nil,
+        fieldName: String? = nil,
+        direction: String? = nil
+    ) async -> ActionResponse? {
+        guard let server else { return nil }
+        // Set before the request, not after: a successful action refreshes, and that
         // refresh is the one most likely to surface the next Critical.
         if Self.threatActions.contains(action) {
             criticalBannerQuietUntil = .now + criticalBannerCooldown
         }
         do {
-            let resp = try await api.action(
+            return try await api.action(
                 baseURL: server.baseURL,
                 token: store.sessionToken(for: server.id),
                 action: action,
@@ -570,13 +657,6 @@ final class AppModel {
                 fieldName: fieldName,
                 direction: direction
             )
-            statusBanner = resp.message
-            if !resp.ok {
-                lastError = resp.message
-                return false
-            }
-            await refresh(silent: true)
-            return true
         } catch APIError.unauthorized {
             store.setSessionToken(nil, for: server.id)
             needsAuth = true
@@ -585,11 +665,22 @@ final class AppModel {
             allowAutoLogin = false
             state = nil
             lastError = "Session expired. Enter the master password again."
-            return false
+            return nil
         } catch {
             lastError = error.localizedDescription
+            return nil
+        }
+    }
+
+    /// Surface an action's reply and pull fresh state when it worked.
+    private func applyActionResult(_ resp: ActionResponse) async -> Bool {
+        statusBanner = resp.message
+        guard resp.ok else {
+            lastError = resp.message
             return false
         }
+        await refresh(silent: true)
+        return true
     }
 
     func block(ip: String) async { _ = await runAction("block", ip: ip) }
@@ -603,6 +694,53 @@ final class AppModel {
     func addAllowlist(_ value: String) async { _ = await runAction("add_allowlist", value: value) }
     func removeAllowlist(_ value: String, kind: String) async {
         _ = await runAction("remove_allowlist", value: value, kind: kind)
+    }
+
+    // MARK: Sleep / wake
+    //
+    // The web console's header Sleep ⇄ Wake button. Sleeping stops every watcher the
+    // server owns — connections, ports, auth log, closed-port probes, ARP, launch items,
+    // exfiltration, honeypot — so asleep means nothing is observed rather than a frozen
+    // dashboard. Firewall blocks stay in force: sleeping stops watching, it must never
+    // unblock an address the machine is already protected from.
+    //
+    // On the wire this is the same monitor state Pause sets, so what makes Sleep a
+    // different thing is that the client parks too — dimmed data, a 30s heartbeat, no
+    // Critical alerts — exactly as the browser does.
+
+    func sleepConsole() async {
+        guard let server else { return }
+        // Commit only once the server confirms: parking the app over a console that is
+        // still watching would hide live traffic behind an "Asleep" banner.
+        guard await runMonitorAction(primary: "sleep", fallback: "pause") else { return }
+        setSleeping(true, for: server.id)
+        syncSleepMode()
+    }
+
+    func wakeConsole() async {
+        guard let server else { return }
+        guard await runMonitorAction(primary: "wake", fallback: "resume") else { return }
+        setSleeping(false, for: server.id)
+        syncSleepMode()
+    }
+
+    func toggleSleep() async {
+        if isAsleep {
+            await wakeConsole()
+        } else {
+            await sleepConsole()
+        }
+    }
+
+    /// Web ≥ 0.5.1 names this control `sleep`/`wake`; every 0.3–0.5.0 server drives the
+    /// same state under `pause`/`resume`. Try the current name and fall back on the older
+    /// one, so an un-upgraded server gets a working button instead of "Unknown action".
+    private func runMonitorAction(primary: String, fallback: String) async -> Bool {
+        guard var resp = await sendAction(primary) else { return false }
+        if !resp.ok, resp.isUnknownAction, let older = await sendAction(fallback) {
+            resp = older
+        }
+        return await applyActionResult(resp)
     }
 
     /// Web 0.3+: `set_setting` with name + true/false value.
