@@ -12,9 +12,12 @@ namespace NetworkSentinel.ViewModels;
 
 public partial class MainViewModel : ObservableObject, IDisposable
 {
-    private readonly NetworkMonitorService _monitor = new();
-    private readonly FirewallService _firewall = new();
-    private readonly AllowlistService _allowlist = new();
+    // The shared graph is built and cross-wired by SentinelCore; these are views
+    // onto it so the rest of this class reads unchanged.
+    private readonly SentinelCore _core = new();
+    private readonly NetworkMonitorService _monitor;
+    private readonly FirewallService _firewall;
+    private readonly AllowlistService _allowlist;
     private readonly DesktopNotifier _notifier = new();
     private readonly DuckDnsUpdater _duckDns = new();
     private readonly AppSettings _settings;
@@ -159,7 +162,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     public MainViewModel()
     {
-        _settings = AppSettings.Load();
+        _settings = _core.Settings;
+        _monitor = _core.Monitor;
+        _firewall = _core.Firewall;
+        _allowlist = _core.Allowlist;
         _autoBlockEnabled = _settings.AutoBlockEnabled;
         _autoBlockMinLevel = _settings.AutoBlockMinLevel;
         if (!AutoBlockLevelOptions.Contains(_autoBlockMinLevel))
@@ -202,28 +208,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
             _duckDns.Start();
         _remoteAccessStatus = BuildRemoteAccessStatus();
 
-        _firewall.Allowlist = _allowlist;
-        _firewall.AutoBlockExpiry = ExpiryMinutesToSpan(_settings.AutoBlockExpiryMinutes);
-        _firewall.StartExpirySweep();
-        _monitor.GeoLookupsEnabled = _settings.GeoLookupEnabled;
-        _monitor.AuthMonitoringEnabled = _settings.AuthLogMonitorEnabled;
-        _monitor.ProbeMonitoringEnabled = _settings.ProbeLogEnabled;
-        _monitor.PollIntervalMs = _settings.MonitorPollMs;
-        _monitor.ThreatIntelEnabled = _settings.ThreatIntelEnabled;
-        _monitor.ProcessReputationEnabled = _settings.ProcessReputationEnabled;
-        _monitor.NewListenerAlertsEnabled = _settings.NewListenerAlertsEnabled;
-        _monitor.ArpWatchEnabled = _settings.ArpWatchEnabled;
-        _monitor.LaunchWatchEnabled = _settings.LaunchItemWatchEnabled;
-        _monitor.ExfilMonitorEnabled = _settings.ExfilMonitorEnabled;
-        _monitor.ExfilThresholdMb = _settings.ExfilMbPer10Min;
-        _monitor.HoneypotPorts = HoneypotService.ParsePorts(_settings.HoneypotPorts);
-        _monitor.HoneypotEnabled = _settings.HoneypotEnabled;
-        _monitor.WebhookUrl = _settings.WebhookUrl;
-        _monitor.WebhookMinLevel = _settings.GetWebhookMinLevel();
-        _monitor.IsIpAllowlisted = ip => _allowlist.IsAllowed(ip, out _);
-        if (_settings.ProbeLogEnabled && _firewall.IsRoot)
-            _ = Task.Run(() => _firewall.EnableProbeLogging());
-        _allowlist.UseRemoteFeed = _settings.AllowlistUseRemoteFeed;
         _monitor.Updated += OnMonitorUpdated;
         _monitor.ThreatsDetected += OnThreatsDetected;
         _monitor.Start();
@@ -1122,8 +1106,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _ => "Never (permanent)"
     };
 
+    // One definition, in SentinelCore — the three frontends each had their own.
     private static TimeSpan? ExpiryMinutesToSpan(int minutes)
-        => minutes > 0 ? TimeSpan.FromMinutes(minutes) : null;
+        => SentinelCore.ExpiryMinutesToSpan(minutes);
 
     private void RefreshMonitorStatusText()
     {
@@ -1658,7 +1643,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _monitor.ThreatsDetected -= OnThreatsDetected;
         PersistSettings();
         _duckDns.Dispose();
-        _allowlist.Dispose();
-        _monitor.Dispose();
+        _core.Dispose();
     }
 }

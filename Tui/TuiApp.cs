@@ -47,9 +47,12 @@ public sealed class TuiApp : IDisposable
         RestoreAllowlisted
     }
 
-    private readonly NetworkMonitorService _monitor = new();
-    private readonly FirewallService _firewall = new();
-    private readonly AllowlistService _allowlist = new();
+    // The shared graph is built and cross-wired by SentinelCore; these are views
+    // onto it so the rest of this class reads unchanged.
+    private readonly SentinelCore _core = new();
+    private readonly NetworkMonitorService _monitor;
+    private readonly FirewallService _firewall;
+    private readonly AllowlistService _allowlist;
     private readonly AppSettings _settings;
     private readonly object _autoBlockGate = new();
     private readonly Dictionary<string, DateTime> _autoBlockAttempted = new(StringComparer.OrdinalIgnoreCase);
@@ -73,7 +76,10 @@ public sealed class TuiApp : IDisposable
 
     public TuiApp()
     {
-        _settings = AppSettings.Load();
+        _settings = _core.Settings;
+        _monitor = _core.Monitor;
+        _firewall = _core.Firewall;
+        _allowlist = _core.Allowlist;
         _autoBlockEnabled = _settings.AutoBlockEnabled;
         _autoBlockMinLevel = _settings.AutoBlockMinLevel;
         if (_autoBlockMinLevel is not (nameof(ThreatLevel.Medium) or nameof(ThreatLevel.High) or nameof(ThreatLevel.Critical)))
@@ -81,29 +87,6 @@ public sealed class TuiApp : IDisposable
         _blockInbound = _settings.AutoBlockInbound;
         _blockOutbound = _settings.AutoBlockOutbound;
 
-        _firewall.Allowlist = _allowlist;
-        _firewall.AutoBlockExpiry = _settings.AutoBlockExpiryMinutes > 0
-            ? TimeSpan.FromMinutes(_settings.AutoBlockExpiryMinutes)
-            : null;
-        _firewall.StartExpirySweep();
-        _monitor.GeoLookupsEnabled = _settings.GeoLookupEnabled;
-        _monitor.AuthMonitoringEnabled = _settings.AuthLogMonitorEnabled;
-        _monitor.ProbeMonitoringEnabled = _settings.ProbeLogEnabled;
-        _monitor.ThreatIntelEnabled = _settings.ThreatIntelEnabled;
-        _monitor.ProcessReputationEnabled = _settings.ProcessReputationEnabled;
-        _monitor.NewListenerAlertsEnabled = _settings.NewListenerAlertsEnabled;
-        _monitor.ArpWatchEnabled = _settings.ArpWatchEnabled;
-        _monitor.LaunchWatchEnabled = _settings.LaunchItemWatchEnabled;
-        _monitor.ExfilMonitorEnabled = _settings.ExfilMonitorEnabled;
-        _monitor.ExfilThresholdMb = _settings.ExfilMbPer10Min;
-        _monitor.HoneypotPorts = HoneypotService.ParsePorts(_settings.HoneypotPorts);
-        _monitor.HoneypotEnabled = _settings.HoneypotEnabled;
-        _monitor.WebhookUrl = _settings.WebhookUrl;
-        _monitor.WebhookMinLevel = _settings.GetWebhookMinLevel();
-        _monitor.IsIpAllowlisted = ip => _allowlist.IsAllowed(ip, out _);
-        if (_settings.ProbeLogEnabled && _firewall.IsRoot)
-            _ = Task.Run(() => _firewall.EnableProbeLogging());
-        _allowlist.UseRemoteFeed = _settings.AllowlistUseRemoteFeed;
         _monitor.Updated += OnMonitorUpdated;
         _monitor.ThreatsDetected += OnThreatsDetected;
     }
@@ -1515,9 +1498,8 @@ public sealed class TuiApp : IDisposable
     {
         _monitor.Updated -= OnMonitorUpdated;
         _monitor.ThreatsDetected -= OnThreatsDetected;
-        _monitor.Dispose();
-        // Its timers and HTTP client leaked on exit; the GUI and web console
-        // already dispose theirs.
-        _allowlist.Dispose();
+        // Disposes the monitor and the allowlist together — the allowlist's timers
+        // and HTTP client used to leak here because only this frontend forgot it.
+        _core.Dispose();
     }
 }
