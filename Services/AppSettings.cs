@@ -69,6 +69,18 @@ public sealed class AppSettings
     /// <summary>Comma-separated Suricata signature IDs to ignore (per-rule mute for false positives).</summary>
     public string SuricataIgnoredSids { get; set; } = "";
 
+    /// <summary>
+    /// Watch WireGuard peers via `wg show`. WireGuard's single unconnected UDP socket is
+    /// never a tracked connection, so on a VPN server this is the only view of who is
+    /// attached. Needs root and wireguard-tools.
+    /// </summary>
+    public bool WireGuardMonitorEnabled { get; set; }
+
+    /// <summary>
+    /// Megabytes sent to one WireGuard peer within 10 minutes before alerting (0 = off).
+    /// </summary>
+    public int WireGuardPeerMbPer10Min { get; set; }
+
     /// <summary>Check remote IPs against public threat-intel blocklists (FireHOL level1, Spamhaus DROP).</summary>
     public bool ThreatIntelEnabled { get; set; } = true;
 

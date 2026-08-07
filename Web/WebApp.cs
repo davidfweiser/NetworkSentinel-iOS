@@ -901,6 +901,11 @@ public sealed class WebApp : IDisposable
                             _settings.AutoBlockEnabled = on;
                             label = on ? $"Auto-block ON (≥ {_autoBlockMinLevel})" : "Auto-block OFF";
                             break;
+                        case "wireGuardMonitorEnabled":
+                            _monitor.WireGuardMonitorEnabled = on;
+                            _settings.WireGuardMonitorEnabled = on;
+                            label = on ? $"WireGuard peer monitoring: on ({_monitor.WireGuardStatus})" : "WireGuard peer monitoring: off";
+                            break;
                         case "suricataEnabled":
                             _monitor.SuricataEnabled = on;
                             _settings.SuricataEnabled = on;
@@ -1007,6 +1012,17 @@ public sealed class WebApp : IDisposable
                             label = _settings.SuricataEnabled
                                 ? _monitor.SuricataStatus
                                 : $"Suricata EVE path saved ({path}) — enable ingestion to read it.";
+                            break;
+                        }
+                        case "wireGuardPeerMbPer10Min":
+                        {
+                            if (!int.TryParse(raw, out var wgMb) || wgMb < 0)
+                                return ActionResultDto.Fail("Per-peer transfer threshold must be 0 or more megabytes (0 = off).");
+                            _settings.WireGuardPeerMbPer10Min = wgMb;
+                            _monitor.WireGuardPeerMbPer10Min = wgMb;
+                            label = wgMb == 0
+                                ? "Per-peer transfer alerts off."
+                                : $"Per-peer transfer threshold: {wgMb} MB / 10 min";
                             break;
                         }
                         case "suricataMaxSeverity":
@@ -1420,6 +1436,9 @@ public sealed class WebApp : IDisposable
                 suricataMaxSeverity = _settings.SuricataMaxSeverity,
                 suricataIgnoredSids = _settings.SuricataIgnoredSids,
                 suricataStatus = _monitor.SuricataStatus,
+                wireGuardMonitorEnabled = _settings.WireGuardMonitorEnabled,
+                wireGuardPeerMbPer10Min = _settings.WireGuardPeerMbPer10Min,
+                wireGuardStatus = _monitor.WireGuardStatus,
                 webhookUrl = _settings.WebhookUrl,
                 webhookStatus = _monitor.WebhookStatus,
                 autoBlockExpiryMinutes = _settings.AutoBlockExpiryMinutes,
@@ -2763,6 +2782,8 @@ public sealed class WebApp : IDisposable
         ${row('Suricata EVE log path', 'Full path to eve.json. Defaults to the Homebrew location for this Mac.', txt('suricataEvePath', s.suricataEvePath || '', '/opt/homebrew/var/log/suricata/eve.json'))}
         ${row('Suricata max severity', 'Highest severity number to accept. Suricata counts down, so 1 is most severe and 3 keeps informational noise out.', txt('suricataMaxSeverity', s.suricataMaxSeverity ?? 3, '3'))}
         ${row('Suricata ignored SIDs', 'Comma-separated signature IDs to drop entirely — the per-rule mute for a known false positive.', txt('suricataIgnoredSids', s.suricataIgnoredSids || '', '2001219,2010935'))}
+        ${row('WireGuard peer watch', 'Track WireGuard peers via `wg show` — new peers, handshakes going stale, and per-peer transfer volume. WireGuard\'s unconnected UDP socket is never a tracked connection, so on a VPN server this is the only view of who is attached. Needs root and wireguard-tools. ' + (s.wireGuardStatus || ''), sw('wireGuardMonitorEnabled', s.wireGuardMonitorEnabled))}
+        ${row('Per-peer transfer alert (MB / 10 min)', 'Megabytes sent to one peer within 10 minutes before alerting. 0 turns per-peer volume alerts off.', txt('wireGuardPeerMbPer10Min', s.wireGuardPeerMbPer10Min ?? 0, '0'))}
       </div>
       <div class="settings-group"><h3>Alerting</h3>
         ${row('Webhook URL', 'POST Critical threats to a webhook — ntfy, Slack, and Discord formats are detected automatically; anything else gets generic JSON. Empty = off. ' + (s.webhookStatus && s.webhookUrl ? s.webhookStatus : ''), txt('webhookUrl', s.webhookUrl || '', 'https://ntfy.sh/your-topic'))}

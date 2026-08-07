@@ -54,6 +54,36 @@ public class SentinelCoreTests
     }
 
     [Fact]
+    public void WiresThePeerEndpointShieldIntoPrevention()
+    {
+        using var core = new SentinelCore(new AppSettings());
+
+        // Blocking a WireGuard peer's public endpoint kills that client's tunnel, so the
+        // engine has to consult the monitor before auto-blocking. With no peers up this
+        // simply never matches, which is why the assertion is on the wiring.
+        Assert.NotNull(core.Prevention.IsProtectedAddress);
+        Assert.False(core.Prevention.IsProtectedAddress!("203.0.113.99"));
+    }
+
+    [Fact]
+    public void PassesSuricataAndWireGuardSettingsThrough()
+    {
+        var settings = new AppSettings
+        {
+            SuricataEnabled = false,
+            SuricataMaxSeverity = 2,
+            SuricataIgnoredSids = "2001219,2010935",
+            WireGuardPeerMbPer10Min = 4096
+        };
+        using var core = new SentinelCore(settings);
+
+        Assert.Equal(2, core.Monitor.SuricataMaxSeverity);
+        Assert.Equal(new[] { 2001219L, 2010935L }, core.Monitor.SuricataIgnoredSids
+            .Split(',').Select(long.Parse).OrderBy(x => x));
+        Assert.Equal(4096, core.Monitor.WireGuardPeerMbPer10Min);
+    }
+
+    [Fact]
     public void PassesMonitorSettingsThrough()
     {
         var settings = new AppSettings

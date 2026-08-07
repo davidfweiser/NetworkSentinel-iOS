@@ -58,6 +58,20 @@ Which end of the flow is the threat matters here: Suricata's `src_ip` is the pac
 
 Reading `eve.json` usually needs root or a mode change; the status line says so when it can't.
 
+### WireGuard peer monitoring (0.6.x)
+
+WireGuard is a single **unconnected UDP socket**, so a peer's traffic never becomes a tracked connection — on a VPN server, the socket table shows nothing about who is attached. This reads `wg show all dump` instead, and alerts on new peers, handshakes going stale, and per-peer transfer volume.
+
+```bash
+brew install wireguard-tools   # provides `wg`; needs root to read device state
+```
+
+Enable **Settings → Intrusion detection → WireGuard peer watch**. `wg` is resolved by absolute path (Homebrew's prefix, by architecture) rather than through `PATH`, because an app launched from Finder or by launchd does not inherit the shell `PATH` that puts Homebrew on it. Without `wireguard-tools` the status line says so and nothing else changes.
+
+**No key material is ever read.** A device line's second field is the interface *private* key and a peer line's third is the *preshared* key; both are skipped rather than parsed, and a test asserts neither can appear in a parsed peer.
+
+**A peer's public endpoint is protected from auto-block.** That endpoint is where the client's encrypted packets come from, so blocking it kills that client's VPN — and a peer alert (or any other detector tripping on peer traffic) would otherwise nominate exactly that address. Manual blocking is deliberately unaffected.
+
 ### Remote alerting (webhook)
 Set **Settings → Webhook URL** to push Critical threats off the machine — the payload adapts automatically: **ntfy** (plain text + `Title`/`Priority` headers), **Slack** (`{"text": …}`), **Discord** (`{"content": …}`), anything else gets a generic JSON document. Per-source/type cooldown stops a burst from flooding the channel.
 

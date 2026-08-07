@@ -53,9 +53,13 @@ public sealed class SentinelCore : IDisposable
         Monitor.SuricataMaxSeverity = Settings.SuricataMaxSeverity;
         Monitor.SuricataIgnoredSids = Settings.SuricataIgnoredSids;
         Monitor.SuricataEnabled = Settings.SuricataEnabled;
+        Monitor.WireGuardPeerMbPer10Min = Settings.WireGuardPeerMbPer10Min;
+        Monitor.WireGuardMonitorEnabled = Settings.WireGuardMonitorEnabled;
         Monitor.WebhookUrl = Settings.WebhookUrl;
         Monitor.WebhookMinLevel = Settings.GetWebhookMinLevel();
         Monitor.IsIpAllowlisted = ip => Allowlist.IsAllowed(ip, out _);
+        // A WireGuard peer's public endpoint must never be auto-blocked — that kills the tunnel.
+        Prevention.IsProtectedAddress = Monitor.IsWireGuardPeerEndpoint;
 
         // Root can re-install the probe-log rule silently; unprivileged runs wait
         // for the user to authorize elevation instead of failing at startup.

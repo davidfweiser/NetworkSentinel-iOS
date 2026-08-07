@@ -15,6 +15,7 @@ public sealed class NetworkMonitorService : IDisposable
     private readonly ThreatIntelService _intel = new();
     private readonly HoneypotService _honeypot = new();
     private readonly SuricataService _suricata = new();
+    private readonly WireGuardMonitor _wireGuard = new();
     private readonly ArpWatchService _arpWatch = new();
     private readonly LaunchPersistenceWatcher _launchWatch = new();
     private readonly ExfiltrationMonitor _exfil = new();
@@ -236,6 +237,63 @@ public sealed class NetworkMonitorService : IDisposable
         }
     }
 
+    private bool _wireGuardEnabled;
+
+    /// <summary>
+    /// Watch WireGuard peers. WireGuard's unconnected UDP socket never becomes a tracked
+    /// connection, so on a VPN server this is the only view of who is attached.
+    /// </summary>
+    public bool WireGuardMonitorEnabled
+    {
+        get => _wireGuardEnabled;
+        set
+        {
+            if (_wireGuardEnabled == value) return;
+            _wireGuardEnabled = value;
+            if (Stats.IsMonitoring)
+            {
+                if (value) _wireGuard.Start();
+                else _wireGuard.Stop();
+            }
+        }
+    }
+
+    /// <summary>Megabytes sent to one WireGuard peer within 10 minutes before alerting (0 = off).</summary>
+    public int WireGuardPeerMbPer10Min
+    {
+        get => _wireGuard.TransferMbPer10Min;
+        set => _wireGuard.TransferMbPer10Min = Math.Clamp(value, 0, 1_000_000);
+    }
+
+    public string WireGuardStatus => _wireGuard.Status;
+
+    /// <summary>Current WireGuard peers (public keys only — no private or preshared key material).</summary>
+    public IReadOnlyList<WireGuardPeer> WireGuardPeers => _wireGuard.Peers;
+
+    /// <summary>
+    /// True when the address is a current WireGuard peer's public endpoint — the address
+    /// its encrypted tunnel packets arrive from. Blocking an endpoint kills that client's
+    /// VPN, so the prevention engine consults this before auto-blocking: WireGuard's own
+    /// alerts carry the endpoint as the threat source (for geo enrichment), and any other
+    /// detector can flag the same address when a peer's traffic trips a heuristic.
+    /// Only meaningful while WireGuard monitoring is enabled; with no peer data it simply
+    /// never matches.
+    /// </summary>
+    public bool IsWireGuardPeerEndpoint(string ip)
+    {
+        if (string.IsNullOrEmpty(ip) || !FirewallService.TryNormalizeIp(ip, out var normalized, out _))
+            return false;
+
+        foreach (var peer in _wireGuard.Peers)
+        {
+            if (string.IsNullOrEmpty(peer.EndpointIp)) continue;
+            if (FirewallService.TryNormalizeIp(peer.EndpointIp, out var endpoint, out _) &&
+                string.Equals(endpoint, normalized, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+        return false;
+    }
+
     private bool _suricataEnabled;
 
     /// <summary>Ingest Suricata EVE JSON alerts (signature / payload inspection).</summary>
@@ -266,6 +324,7 @@ public sealed class NetworkMonitorService : IDisposable
             if (Stats.IsMonitoring && _suricataEnabled)
             {
                 _suricata.Stop();
+        _wireGuard.Stop();
                 _suricata.Start();
             }
         }
@@ -349,6 +408,7 @@ public sealed class NetworkMonitorService : IDisposable
         if (_exfilEnabled) _exfil.Start();
         if (_honeypotEnabled) _honeypot.Start(_honeypotPorts);
         if (_suricataEnabled) _suricata.Start();
+        if (_wireGuardEnabled) _wireGuard.Start();
         _loop = Task.Run(() => RunAsync(_cts.Token));
     }
 
@@ -513,6 +573,7 @@ public sealed class NetworkMonitorService : IDisposable
             newThreats.AddRange(_honeypot.DrainPending());
             if (_suricataEnabled)
                 newThreats.AddRange(_suricata.DrainPending());
+            newThreats.AddRange(_wireGuard.DrainPending());
             newThreats.AddRange(_arpWatch.DrainPending());
             newThreats.AddRange(_launchWatch.DrainPending());
             newThreats.AddRange(_exfil.DrainPending());
@@ -875,6 +936,7 @@ public sealed class NetworkMonitorService : IDisposable
         _exfil.Dispose();
         _honeypot.Dispose();
         _suricata.Dispose();
+        _wireGuard.Dispose();
         _intel.Dispose();
         _webhook.Dispose();
         _history.Save();
