@@ -11,25 +11,29 @@ Connect to one or more hosts running the headless web UI (`-w` / `--web`), sign 
 | **Multi-server** | Add/edit/delete servers; switch between home, lab, VPS, etc. |
 | **Dashboard** | Needs-attention card with one-tap block, live stats, scrubbable activity chart, sleep/wake, pause/resume, auto-block controls and rule expiry |
 | **Sleep / Wake** | Stops every watcher on the server and parks the app — dimmed data, an Asleep banner on each live tab, a 30-second heartbeat, no Critical alerts. Firewall blocks stay in force |
-| **Detection** | Toggle geo lookups, auth-log brute-force monitoring, closed-port scan detection, and the server's own Critical warnings, with its status text inline |
-| **Intrusion detection** | Threat-intel blocklists, new-listener alerts, process reputation, ARP/gateway watch, launch-item watch, exfiltration monitor with threshold, honeypot decoy ports (web 0.4+) |
+| **Detection** | Toggle geo lookups, auth-log brute-force monitoring, closed-port scan detection, kernel flow events, and the server's own Critical warnings, with its status text inline |
+| **Intrusion detection** | Threat-intel blocklists, new-listener alerts, process reputation, ARP/gateway watch, startup-item watch, exfiltration monitor with threshold, honeypot decoy ports (web 0.4+) |
+| **DNS hygiene** | Plaintext egress, encrypted DNS going away, unapproved resolvers, allowlist drift — with the approved-resolver list (web 0.6+) |
+| **VPN peers** | WireGuard peer monitoring, per-peer transfer threshold, and the read-only peer table (web 0.6+) |
+| **Signatures** | Suricata EVE ingestion — feed path, maximum severity, muted signature ids (web 0.6+) |
 | **Threats** | Severity filters, search, clear alerts, block source IP |
 | **Hosts** | Remote peers with geo/threat badges; swipe to block/unblock |
 | **Connections** | Live process + endpoint table; block remote peers |
-| **More** | Listening ports, firewall rules, allowlist add/remove/refresh, server webhook URL, change master password |
+| **More** | Listening ports, firewall rules, allowlist add/remove/refresh, server webhook URL, HTTPS + DuckDNS remote access and certificate issuance, change master password |
 | **Alerts** | Time-sensitive notifications and in-app popups for Critical threats, with catch-up on launch |
 | **Secure storage** | Session tokens & optional remembered passwords in Keychain |
 
-Talks to the same JSON API as the browser console (Linux, Windows & macOS web **0.3.x – 0.4.x**, current through **0.4.0**):
+Talks to the same JSON API as the browser console (Linux, Windows & macOS web **0.3.x – 0.6.x**, current through **0.6.2**):
 
 - `GET /api/auth/status`
 - `POST /api/auth/login` · `/api/auth/setup` · `/api/auth/logout`
 - `POST /api/auth/change-password` (0.3.2+) — `currentPassword`, `newPassword`, `confirm`
-- `GET /api/state` (settings include `geoLookupEnabled` / `allowlistUseRemoteFeed` / `authLogMonitorEnabled` + `authLogStatus` / `probeLogEnabled` + `probeLogStatus` / `criticalAlertsEnabled`, and on 0.4+ the intrusion-detection group below; threats include `ts`; rules include `isProtected`, `address`, `ports`)
+- `GET /api/state` (settings include `geoLookupEnabled` / `allowlistUseRemoteFeed` / `authLogMonitorEnabled` + `authLogStatus` / `probeLogEnabled` + `probeLogStatus` / `criticalAlertsEnabled`, on 0.4+ the intrusion-detection group, on 0.5+ the HTTPS/DuckDNS group, and on 0.6+ `preventionDryRun` / `conntrackEventsEnabled` / the DNS, WireGuard and Suricata groups; threats include `ts`; rules include `isProtected`, `address`, `ports`)
 - `POST /api/action` — `block`, `unblock`, `set_setting`, `block_port`, `unblock_port`, `remove_rule`, `remove_all_rules`, allowlist, auto-block, …
 - `POST /api/action` — `sleep` / `wake` (web 0.5.1+), falling back to the `pause` / `resume` names every 0.3–0.5.0 server drives the same monitor state under
+- `POST /api/action` — `issue_cert` (web 0.5+)
 
-`set_setting` carries booleans as `"true"`/`"false"` and the 0.4 numeric/text settings as their literal value, including the empty string that switches the webhook off.
+`set_setting` carries booleans as `"true"`/`"false"` and the numeric/text settings as their literal value, including the empty string that switches the webhook off, un-mutes every Suricata signature, or clears the approved-resolver list.
 
 Sessions use the web UI’s `ns_session` cookie, sent as `Authorization: Bearer` from the app.
 
@@ -59,15 +63,31 @@ A second Dashboard card, shown only against servers that advertise the suite. Ea
 
 Two more 0.4 settings live where they belong rather than in that card: **auto-block rule expiry** sits with the other auto-block controls (Never / 1 hour / 6 hours / 24 hours / 7 days), and the server's **webhook URL** is in More, next to this device's alerts — it is the one alert path that still works when the phone is asleep or the app has been force-quit.
 
-**Threats that are not an address.** The new detectors that watch the machine itself — new listener, launch-item change — report `127.0.0.1` rather than a peer, and the server refuses to firewall loopback. Wherever the app would otherwise offer **Block** for one of those (needs-attention card, threat list, in-app Critical banner), it shows what was detected instead, so the primary action is never a button that can only fail. Threat rows also carry a per-type icon, since 0.4 raised the number of distinct threat types from eight to fifteen.
+The persistence watcher is one detector under two names: macOS publishes it as `launchItemWatchEnabled` and watches LaunchAgents/LaunchDaemons, Linux and Windows publish `persistenceWatchEnabled` and watch systemd units, cron and autostart entries. The app reads whichever key the server sent, labels the row to match, and writes the same one back — sending the other name comes back as `Unknown setting`, which reads as a toggle that silently does nothing.
+
+**Threats that are not an address.** Several detectors report a source the server will refuse to firewall: the ones watching the machine itself — new listener, persistence change — report `127.0.0.1`, DNS hygiene reports the resolver being queried (routinely a LAN or tunnel address), and a WireGuard peer with no live endpoint falls back to loopback. Wherever the app would otherwise offer **Block** for one of those (needs-attention card, threat list, in-app Critical banner), it shows what was detected instead, so the primary action is never a button that can only fail. Threat rows also carry a per-type icon, since 0.4 raised the number of distinct threat types from eight to fifteen and 0.6 to eighteen.
 
 Linux and Windows carry the same suite as of web 0.5.1.
+
+### Prevention, DNS, VPN and signatures (0.6.0)
+
+0.6 put every automatic block behind one enforcement engine and added three detection sources that the connection heuristics cannot reach. Each appears only when the server advertises it, and each carries the server's own status line — most of these need root, and a detector switched on but not running says why.
+
+| Where | What you get |
+|-------|--------------|
+| **Controls → Dry run** | Auto-block walks every gate and reports what it *would* have dropped without writing a rule. Where a new detection source belongs before it is allowed to enforce |
+| **Detection → Kernel flow events** | Conntrack `NEW` events, so a snapshot is taken because a connection arrived rather than because the poll timer fired |
+| **DNS hygiene** | Plaintext DNS egress, encrypted DNS silently stopping, an unapproved resolver, a VPN client bypassing yours, and an allowlisted domain resolving into a network it has never used before. **Approved resolvers** is editable here — DoH is HTTPS on 443 and only counts as encrypted DNS when its destination is on that list |
+| **VPN peers · WireGuard** | Peer monitoring plus the per-peer transfer threshold (off by default — a peer streaming video moves gigabytes). The peer table is read-only by design: revoking a peer is a WireGuard configuration change. Only public keys ever reach the app; the server drops private and preshared keys where it parses `wg show` |
+| **Signatures · Suricata** | EVE ingestion, the feed path, the maximum severity accepted (Suricata counts down — 1 is most severe), and the muted signature ids that stop one noisy rule burying every other alert |
+
+**Blocking a tunnel address.** The prevention engine screens CGNAT (100.64/10 — Tailscale and most WireGuard tunnels) out of auto-block entirely. A manual block still reaches it, so every **Block** button in the app routes through one confirmation first: the address is reachable, the block will succeed, and what it cuts off may be the tunnel you are managing the server through.
 
 ### Sleep / Wake
 
 The web console's header **Sleep ⇄ Wake** button, in the Dashboard controls and again under More → Monitoring.
 
-Sleeping stops *everything the server watches* — the connection/port poll plus the auth-log, closed-port probe, ARP, launch-item, exfiltration and honeypot watchers — so asleep means nothing is observed, not a frozen dashboard. **Firewall blocks stay in force**: sleeping stops watching, it never unblocks an address the machine is already protected from.
+Sleeping stops *everything the server watches* — the connection/port poll plus the auth-log, closed-port probe, ARP, startup-item, exfiltration and honeypot watchers, and on 0.6 servers the DNS, WireGuard, Suricata and kernel-event feeds too — so asleep means nothing is observed, not a frozen dashboard. **Firewall blocks stay in force**: sleeping stops watching, it never unblocks an address the machine is already protected from.
 
 The app parks itself alongside the server, which is what makes Sleep feel different from a plain Pause:
 
@@ -139,6 +159,14 @@ the in-app banner waits its turn.
 The activity chart is Swift Charts: drag anywhere on it to pin a sample and read its exact
 connection, host and threat counts, with the same red markers and zero baseline the web
 console uses.
+
+### Remote access — HTTPS and DuckDNS (0.5.0)
+
+**More → Remote access** and **Dynamic DNS & certificate** mirror the web console's own settings, because a console you reach from outside the LAN is exactly the one you cannot walk over to and fix.
+
+The section leads with **This connection**, which reports `httpsActive` — what the server is serving right now. Everything below it is configuration: TLS endpoints are bound when the console starts, so the HTTPS switch, port, redirect and certificate/key paths are saved immediately and take effect at the next restart. The server validates a path as soon as it arrives and tries to load the pair, so a bad one is reported here rather than as a console that fails to come back up.
+
+**Issue certificate** starts Let's Encrypt issuance through DuckDNS. It waits on DNS propagation and runs for minutes, so its progress arrives in the state poll rather than in the action's reply — the button disables itself while issuance is running and the outcome appears under it. The DuckDNS token is write-only: the server reports only whether one is stored and never sends it back, so the field always starts empty and saving it empty clears it.
 
 ### Changing the master password
 

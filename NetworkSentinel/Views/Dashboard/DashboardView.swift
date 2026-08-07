@@ -5,8 +5,11 @@ struct DashboardView: View {
     @Binding var showServers: Bool
 
     @Namespace private var glassNamespace
-    @State private var showHoneypotPorts = false
-    @State private var honeypotPortsDraft = ""
+    /// The free-text server settings all edit the same way — one row, one alert, one
+    /// `set_setting` — so they share a single editor rather than a `@State` pair each.
+    @State private var textEdit: TextSettingEdit?
+    @State private var textEditDraft = ""
+    @State private var showWireGuardPeers = false
 
     private var stats: StatsInfo? { model.state?.stats }
     private var settings: SettingsInfo? { model.state?.settings }
@@ -29,8 +32,7 @@ struct DashboardView: View {
                     statsGrid.nsAsleepDimmed(asleep)
                     activityCard.nsAsleepDimmed(asleep)
                     controlsCard
-                    detectionCard
-                    intrusionCard
+                    settingsCards
                     recentThreats.nsAsleepDimmed(asleep)
                 }
                 .animation(.easeInOut(duration: 0.25), value: asleep)
@@ -71,7 +73,27 @@ struct DashboardView: View {
             .refreshable {
                 await model.refresh(silent: false)
             }
+            .sheet(isPresented: $showWireGuardPeers) {
+                WireGuardPeersView(
+                    peers: settings?.wireGuardPeers ?? [],
+                    status: settings?.wireGuardStatus
+                )
+                .preferredColorScheme(.dark)
+            }
+            .nsTextSettingAlert($textEdit, draft: $textEditDraft)
         }
+    }
+
+    /// Every server-settings card, in the order the web console's own Settings tab puts
+    /// them. Grouped into one member so the scroll body stays under ViewBuilder's ten-child
+    /// limit — 0.6 added three of these on its own.
+    @ViewBuilder
+    private var settingsCards: some View {
+        detectionCard
+        intrusionCard
+        dnsHygieneCard
+        wireGuardCard
+        suricataCard
     }
 
     // MARK: - Status
@@ -193,7 +215,7 @@ struct DashboardView: View {
                     Spacer()
                     if t.isBlockable {
                         Button("Block") {
-                            Task { await model.block(ip: t.sourceIp) }
+                            Task { await model.requestBlock(ip: t.sourceIp) }
                         }
                         .font(.subheadline.weight(.semibold))
                         .buttonStyle(.glassProminent)
@@ -354,6 +376,19 @@ struct DashboardView: View {
                 }
                 .buttonStyle(.glass)
             }
+
+            // Web 0.6+ — the single prevention engine can walk every gate and report what
+            // it would have dropped without writing a rule. It belongs with the auto-block
+            // controls it modifies, not in a detector list: it changes what blocking *does*.
+            if let dryRun = settings?.preventionDryRun {
+                settingToggle(
+                    title: "Dry run",
+                    subtitle: dryRun
+                        ? "Auto-block reports what it would drop and writes no firewall rules."
+                        : "Auto-block writes firewall rules. Turn dry run on before trusting a new detection source.",
+                    isOn: dryRun
+                ) { await model.setPreventionDryRun($0) }
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .nsCard()
@@ -456,6 +491,17 @@ struct DashboardView: View {
                         isOn: settings?.criticalAlertsEnabled ?? true
                     ) { await model.setServerCriticalAlerts($0) }
                 }
+                // Web 0.6+ — kernel flow events. Not a detector: it changes *when* the
+                // existing heuristics get their snapshot, which is why it sits here rather
+                // than with the intrusion suite.
+                if let flow = settings?.conntrackEventsEnabled {
+                    settingToggle(
+                        title: "Kernel flow events",
+                        subtitle: settings?.conntrackStatus
+                            ?? "Takes a snapshot when a connection arrives instead of waiting out the poll interval. Needs root on the server.",
+                        isOn: flow
+                    ) { await model.setConntrackEvents($0) }
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .nsCard()
@@ -498,11 +544,15 @@ struct DashboardView: View {
                     isOn: settings?.arpWatchEnabled ?? true
                 ) { await model.setArpWatch($0) }
 
-                settingToggle(
-                    title: "Launch-item watch",
-                    subtitle: settings?.launchWatchStatus,
-                    isOn: settings?.launchItemWatchEnabled ?? true
-                ) { await model.setLaunchItemWatch($0) }
+                // macOS calls this launch items, Linux and Windows call it startup items;
+                // it is one watcher under two setting names, and the server decides which.
+                if let startupWatch = settings?.startupWatchEnabled {
+                    settingToggle(
+                        title: settings?.startupWatchTitle ?? "Startup-item watch",
+                        subtitle: settings?.startupWatchStatus,
+                        isOn: startupWatch
+                    ) { await model.setStartupItemWatch($0) }
+                }
 
                 settingToggle(
                     title: "Exfiltration monitor",
@@ -524,49 +574,236 @@ struct DashboardView: View {
                     isOn: settings?.honeypotEnabled ?? false
                 ) { await model.setHoneypot($0) }
 
-                Button {
-                    honeypotPortsDraft = settings?.honeypotPorts ?? ""
-                    showHoneypotPorts = true
-                } label: {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Decoy ports")
-                                .font(.subheadline)
-                                .foregroundStyle(NSTheme.text)
-                            Text("Ports already in use are skipped.")
-                                .font(.caption2)
-                                .foregroundStyle(NSTheme.muted)
-                        }
-                        Spacer()
-                        Text(settings?.honeypotPorts?.isEmpty == false ? settings!.honeypotPorts! : "None")
-                            .font(.system(size: 12).monospaced())
-                            .foregroundStyle(NSTheme.cyan)
-                            .lineLimit(1)
-                        Image(systemName: "chevron.right")
-                            .font(.caption2)
-                            .foregroundStyle(NSTheme.muted)
-                    }
-                    .padding(.vertical, 7)
-                }
+                textSettingRow(
+                    title: "Decoy ports",
+                    subtitle: "Ports already in use are skipped.",
+                    value: settings?.honeypotPorts,
+                    edit: TextSettingEdit(
+                        id: "honeypotPorts",
+                        title: "Decoy ports",
+                        placeholder: "2323,3389,5900",
+                        message: "Comma-separated TCP ports nothing legitimate uses. Any completed connection to one is a Critical alert. The server refuses its own console port.",
+                        keyboard: .numbersAndPunctuation,
+                        apply: { await model.setHoneypotPorts($0) }
+                    )
+                )
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .nsCard()
-            .alert("Decoy ports", isPresented: $showHoneypotPorts) {
-                TextField("2323,3389,5900", text: $honeypotPortsDraft)
-                    .keyboardType(.numbersAndPunctuation)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                Button("Save") {
-                    Task { await model.setHoneypotPorts(honeypotPortsDraft) }
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("Comma-separated TCP ports nothing legitimate uses. Any completed connection to one is a Critical alert. The server refuses its own console port.")
-            }
         }
     }
 
     private static let exfilOptions = [50, 100, 250, 500, 1000, 2000]
+
+    // MARK: - DNS hygiene (web 0.6+)
+
+    /// Almost nothing connects without resolving a name first, and DNS is UDP — the
+    /// exfiltration monitor counts TCP socket bytes and cannot see it at all.
+    @ViewBuilder
+    private var dnsHygieneCard: some View {
+        if let enabled = settings?.dnsHygieneEnabled {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("DNS hygiene").nsEyebrow()
+                    .padding(.bottom, 4)
+
+                settingToggle(
+                    title: "Monitor DNS",
+                    subtitle: settings?.dnsHygieneStatus,
+                    isOn: enabled
+                ) { await model.setDnsHygiene($0) }
+
+                textSettingRow(
+                    title: "Approved resolvers",
+                    // Without this list a DoH setup looks like no DNS at all rather than
+                    // like a leak, which is the difference between quiet and wrong.
+                    subtitle: "DoH is HTTPS on 443 — it only counts as encrypted DNS when the destination is listed here.",
+                    value: settings?.dnsApprovedResolvers,
+                    edit: TextSettingEdit(
+                        id: "dnsApprovedResolvers",
+                        title: "Approved resolvers",
+                        placeholder: "10.8.0.1, 127.0.0.53",
+                        message: "Resolver IP addresses, separated by commas. Leave empty to report every plaintext query and recognise no DoH endpoint.",
+                        keyboard: .numbersAndPunctuation,
+                        apply: { await model.setDnsApprovedResolvers($0) }
+                    )
+                )
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .nsCard()
+        }
+    }
+
+    // MARK: - WireGuard peers (web 0.6+)
+
+    /// A tunnel is one unconnected UDP socket, so no VPN client ever becomes a tracked
+    /// connection — nothing about a peer reaches the heuristics without this.
+    @ViewBuilder
+    private var wireGuardCard: some View {
+        if let enabled = settings?.wireGuardMonitorEnabled {
+            let peers = settings?.wireGuardPeers ?? []
+            VStack(alignment: .leading, spacing: 4) {
+                Text("VPN peers · WireGuard").nsEyebrow()
+                    .padding(.bottom, 4)
+
+                settingToggle(
+                    title: "Monitor peers",
+                    subtitle: settings?.wireGuardStatus,
+                    isOn: enabled
+                ) { await model.setWireGuardMonitor($0) }
+
+                if let mb = settings?.wireGuardPeerMbPer10Min {
+                    settingMenu(
+                        title: "Per-peer transfer",
+                        // Off by default on the server, and the reason matters: forwarded
+                        // tunnel traffic has no local socket, so this is the only place it
+                        // is counted — and a peer streaming video moves gigabytes.
+                        subtitle: mb == 0
+                            ? "Off. Forwarded tunnel traffic has no local socket, so nothing else counts it."
+                            : nil,
+                        value: mb == 0 ? "Off" : "\(mb) MB / 10 min",
+                        options: Self.wireGuardThresholdOptions
+                    ) { await model.setWireGuardPeerThreshold($0) }
+                }
+
+                Button {
+                    showWireGuardPeers = true
+                } label: {
+                    detailRowLabel(
+                        title: "Peers",
+                        subtitle: "Read-only — revoking a peer is a WireGuard config change.",
+                        value: peers.isEmpty ? "None" : "\(peers.count)"
+                    )
+                }
+                .disabled(peers.isEmpty)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .nsCard()
+        }
+    }
+
+    private static let wireGuardThresholdOptions: [(label: String, value: Int)] = [
+        ("Off", 0),
+        ("500 MB", 500),
+        ("1 GB", 1000),
+        ("5 GB", 5000),
+        ("10 GB", 10000)
+    ]
+
+    // MARK: - Suricata signatures (web 0.6+)
+
+    /// The heuristics see who is talking and how often; they can never see what is being
+    /// said. Suricata is the engine, the server is the manager, and this is its switch.
+    @ViewBuilder
+    private var suricataCard: some View {
+        if let enabled = settings?.suricataEnabled {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Signatures · Suricata").nsEyebrow()
+                    .padding(.bottom, 4)
+
+                settingToggle(
+                    title: "Ingest Suricata alerts",
+                    subtitle: settings?.suricataStatus,
+                    isOn: enabled
+                ) { await model.setSuricata($0) }
+
+                textSettingRow(
+                    title: "EVE JSON path",
+                    subtitle: "Reading it needs group access or root on the server.",
+                    value: settings?.suricataEvePath,
+                    edit: TextSettingEdit(
+                        id: "suricataEvePath",
+                        title: "EVE JSON path",
+                        placeholder: "/var/log/suricata/eve.json",
+                        message: "Absolute path to Suricata's EVE log. Leave empty to restore the server's default.",
+                        keyboard: .URL,
+                        apply: { await model.setSuricataEvePath($0) }
+                    )
+                )
+
+                if let sev = settings?.suricataMaxSeverity {
+                    settingMenu(
+                        title: "Maximum severity",
+                        subtitle: "Suricata counts down — 1 is most severe, so a lower number is a quieter feed.",
+                        value: Self.suricataSeverityLabel(sev),
+                        options: Self.suricataSeverityOptions
+                    ) { await model.setSuricataMaxSeverity($0) }
+                }
+
+                textSettingRow(
+                    title: "Muted signatures",
+                    subtitle: "One noisy rule can otherwise bury every other alert.",
+                    value: settings?.suricataIgnoredSids,
+                    edit: TextSettingEdit(
+                        id: "suricataIgnoredSids",
+                        title: "Muted signatures",
+                        placeholder: "2010935,2013028",
+                        message: "Comma-separated Suricata signature ids to drop. Leave empty to un-mute everything.",
+                        keyboard: .numbersAndPunctuation,
+                        apply: { await model.setSuricataIgnoredSids($0) }
+                    )
+                )
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .nsCard()
+        }
+    }
+
+    /// Suricata's own scale, mapped to the levels the rest of the app speaks.
+    private static let suricataSeverityOptions: [(label: String, value: Int)] = [
+        ("1 — Critical only", 1),
+        ("2 — High and above", 2),
+        ("3 — Medium and above", 3),
+        ("4 — Everything", 4)
+    ]
+
+    private static func suricataSeverityLabel(_ severity: Int) -> String {
+        suricataSeverityOptions.first { $0.value == severity }?.label ?? "\(severity)"
+    }
+
+    /// Row that opens the shared text editor, pre-filled with what the server currently has.
+    private func textSettingRow(
+        title: String,
+        subtitle: String?,
+        value: String?,
+        edit: TextSettingEdit
+    ) -> some View {
+        Button {
+            textEditDraft = value ?? ""
+            textEdit = edit
+        } label: {
+            detailRowLabel(
+                title: title,
+                subtitle: subtitle,
+                value: (value?.isEmpty == false) ? value! : "None"
+            )
+        }
+    }
+
+    private func detailRowLabel(title: String, subtitle: String?, value: String) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline)
+                    .foregroundStyle(NSTheme.text)
+                if let subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.caption2)
+                        .foregroundStyle(NSTheme.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: 8)
+            Text(value)
+                .font(.system(size: 12).monospaced())
+                .foregroundStyle(NSTheme.cyan)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Image(systemName: "chevron.right")
+                .font(.caption2)
+                .foregroundStyle(NSTheme.muted)
+        }
+        .padding(.vertical, 7)
+    }
 
     /// Preset picker for a numeric server setting, styled to match `settingToggle` rows.
     private func settingMenu(

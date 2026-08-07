@@ -117,9 +117,14 @@ struct SettingsInfo: Codable {
     /// Default-gateway MAC changes and duplicate MACs on the LAN.
     let arpWatchEnabled: Bool?
     let arpWatchStatus: String?
-    /// LaunchAgents / LaunchDaemons watch (macOS) — how malware persists across reboots.
+    /// LaunchAgents / LaunchDaemons watch — the macOS name for the persistence watcher.
     let launchItemWatchEnabled: Bool?
     let launchWatchStatus: String?
+    /// The same watcher on Linux and Windows, where persistence lives in systemd units,
+    /// cron and autostart entries rather than launch items. Both platforms ship one key,
+    /// never both, so the app reads whichever is present and writes back the same one.
+    let persistenceWatchEnabled: Bool?
+    let persistenceWatchStatus: String?
     /// Outbound byte volume to a single non-allowlisted public host.
     let exfilMonitorEnabled: Bool?
     /// Megabytes to one host within 10 minutes before the alert fires. Server floor is 10.
@@ -136,7 +141,107 @@ struct SettingsInfo: Codable {
     /// Minutes before an auto-created block rule is removed again. 0 = never.
     let autoBlockExpiryMinutes: Int?
 
+    // MARK: Prevention engine, DNS, VPN and signatures (web ≥ 0.6.0)
+    //
+    // `preventionDryRun` is the probe for the 0.6 group as a whole: one enforcement engine
+    // now backs every frontend, and a server that reports its dry-run flag reports the rest
+    // of this block too. Each feature below is still gated on its own field, because the
+    // detectors need root and a server without it publishes the setting plus the reason.
+
+    /// Auto-block runs every gate and reports what it *would* drop, writing no rules.
+    let preventionDryRun: Bool?
+    /// Conntrack `NEW` events, so a snapshot is taken because something happened rather
+    /// than because the poll timer fired. Needs root on the server.
+    let conntrackEventsEnabled: Bool?
+    let conntrackStatus: String?
+    /// Plaintext DNS egress, encrypted DNS going away, unapproved resolvers, and
+    /// allowlisted domains resolving into networks they have never used before.
+    let dnsHygieneEnabled: Bool?
+    /// Comma-separated resolver IPs. DoH is HTTPS and indistinguishable from web traffic,
+    /// so it only counts as encrypted DNS when its destination is listed here.
+    let dnsApprovedResolvers: String?
+    let dnsHygieneStatus: String?
+    /// WireGuard peers, which no other part of the server can see — a tunnel is one
+    /// unconnected UDP socket with no peer in the socket table.
+    let wireGuardMonitorEnabled: Bool?
+    /// Megabytes per peer per 10 minutes before an alert. 0 = off, and off is the default:
+    /// a peer streaming video legitimately moves gigabytes.
+    let wireGuardPeerMbPer10Min: Int?
+    let wireGuardStatus: String?
+    /// Read-only peer table. Public keys only — the server drops private and preshared
+    /// keys at parse time, so they never reach any client.
+    let wireGuardPeers: [WireGuardPeerInfo]?
+    /// Suricata EVE ingestion: payload inspection this app does not attempt itself.
+    let suricataEnabled: Bool?
+    /// Absolute path to `eve.json`. Empty resets the server to its own default.
+    let suricataEvePath: String?
+    /// Suricata counts severity down — 1 is most severe. Alerts numbered above this are
+    /// dropped, so a lower number is a quieter feed.
+    let suricataMaxSeverity: Int?
+    /// Comma-separated signature ids to mute.
+    let suricataIgnoredSids: String?
+    let suricataStatus: String?
+
+    // MARK: Remote access (web ≥ 0.5.0)
+
+    /// TLS is bound at startup, so these are saved now and applied on the next restart —
+    /// `httpsActive` is the only field that says what the console is actually serving.
+    let httpsEnabled: Bool?
+    let httpsActive: Bool?
+    let httpsPort: Int?
+    let httpsRedirect: Bool?
+    let httpsStatus: String?
+    let tlsCertPath: String?
+    let tlsKeyPath: String?
+    let duckDnsEnabled: Bool?
+    let duckDnsDomain: String?
+    /// Whether a token is stored. The token itself is never sent to any client.
+    let duckDnsTokenSet: Bool?
+    let duckDnsStatus: String?
+    let acmeEmail: String?
+    /// Certificate issuance waits on DNS propagation and runs for minutes, so it reports
+    /// progress through state rather than through the action's own reply.
+    let certIssueBusy: Bool?
+    let certIssueMessage: String?
+    let certIssueOk: Bool?
+
     let isMonitoring: Bool?
+
+    // MARK: Persistence watch, under whichever name this server uses
+
+    /// `nil` when the server predates the watcher entirely.
+    var startupWatchEnabled: Bool? { persistenceWatchEnabled ?? launchItemWatchEnabled }
+    var startupWatchStatus: String? { persistenceWatchStatus ?? launchWatchStatus }
+
+    /// The `set_setting` key this server answers to. Writing the other one comes back as
+    /// `Unknown setting`, which reads to the user as a toggle that silently does nothing.
+    var startupWatchSettingKey: String? {
+        if persistenceWatchEnabled != nil { return "persistenceWatchEnabled" }
+        if launchItemWatchEnabled != nil { return "launchItemWatchEnabled" }
+        return nil
+    }
+
+    /// Same watcher, but naming it after what it actually watches on that host is the
+    /// difference between a row you can act on and one you have to guess at.
+    var startupWatchTitle: String {
+        persistenceWatchEnabled != nil ? "Startup-item watch" : "Launch-item watch"
+    }
+}
+
+/// One WireGuard peer as the server reports it. Read-only by design: revoking a peer is a
+/// WireGuard configuration change, not something a monitoring console does behind your back.
+struct WireGuardPeerInfo: Codable, Identifiable {
+    var id: String { "\(iface ?? "")|\(publicKey ?? shortKey ?? "")" }
+    let iface: String?
+    /// Truncated public key, for display where the full one will not fit.
+    let shortKey: String?
+    let publicKey: String?
+    /// Public `host:port` the peer's tunnel packets arrive from.
+    let endpoint: String?
+    let allowedIps: String?
+    let handshake: String?
+    let rxMb: Int?
+    let txMb: Int?
 }
 
 struct StatsInfo: Codable {
@@ -223,18 +328,20 @@ struct ThreatInfo: Codable, Identifiable {
 
     /// Whether offering **Block** on this threat leads anywhere.
     ///
-    /// The 0.4.0 detectors that watch the machine itself — new listener, launch-item
-    /// change — report `127.0.0.1` as the source, and the server refuses to firewall
-    /// private or loopback addresses. Showing Block there is a button whose only outcome
-    /// is an error toast, and on the attention card it would be the primary action.
-    var isBlockable: Bool {
-        let ip = sourceIp.trimmingCharacters(in: .whitespaces).lowercased()
-        if ip.isEmpty { return false }
-        return !["127.0.0.1", "::1", "0.0.0.0", "::", "*", "localhost"].contains(ip)
-    }
+    /// Several detectors report an address the server will refuse to firewall: the ones
+    /// that watch the machine itself (new listener, persistence change) report `127.0.0.1`,
+    /// DNS hygiene reports the resolver being queried — routinely a LAN or tunnel address —
+    /// and a WireGuard peer with no current endpoint falls back to loopback too. Showing
+    /// Block there is a button whose only outcome is an error toast, and on the attention
+    /// card it would be the primary action.
+    ///
+    /// CGNAT is deliberately still blockable — see `AppModel.requestBlock(ip:)`, which asks
+    /// first, because what it cuts off may be the tunnel you reach the server through.
+    var isBlockable: Bool { IPScope.of(sourceIp).isBlockable }
 
-    /// SF Symbol for the server's threat-type text. Web 0.4.0 added seven types, and a
-    /// list where every row is the same triangle makes them all look like one thing.
+    /// SF Symbol for the server's threat-type text. Web 0.4.0 took the type count from
+    /// eight to fifteen and 0.6.0 to eighteen; a list where every row is the same triangle
+    /// makes them all look like one thing.
     var icon: String {
         switch (type ?? "").lowercased() {
         case "new listener": return "antenna.radiowaves.left.and.right"
@@ -249,8 +356,75 @@ struct ThreatInfo: Codable, Identifiable {
         case "new remote host": return "globe"
         case "suspicious outbound": return "arrow.up.right"
         case "rapid reconnect", "short-lived burst": return "arrow.left.arrow.right"
+        // Web 0.6.0
+        case "signature match": return "doc.text.magnifyingglass"
+        case "vpn peer change": return "key.horizontal"
+        case "dns anomaly": return "character.magnify"
         default: return "exclamationmark.triangle"
         }
+    }
+}
+
+// MARK: - Address scope
+
+/// Where an address sits relative to what the server will firewall, mirroring its
+/// `FirewallService.IsNeverBlockable`: LAN, loopback, link-local and multicast are refused
+/// outright, and CGNAT (100.64/10 — Tailscale and most WireGuard tunnels) is the one
+/// non-public range a manual block still reaches.
+enum IPScope: Equatable {
+    case publicAddress
+    case carrierGradeNAT
+    case privateOrLocal
+    case notAnAddress
+
+    /// Manual block reaches public addresses, and CGNAT deliberately.
+    var isBlockable: Bool { self == .publicAddress || self == .carrierGradeNAT }
+
+    static func of(_ raw: String) -> IPScope {
+        var s = raw.trimmingCharacters(in: .whitespaces).lowercased()
+        if s.isEmpty || s == "*" || s == "localhost" { return .notAnAddress }
+        if s.hasPrefix("["), s.hasSuffix("]") { s = String(s.dropFirst().dropLast()) }
+        // Drop an IPv6 zone id (`fe80::1%en0`); it is interface scope, not address.
+        if let pct = s.firstIndex(of: "%") { s = String(s[s.startIndex..<pct]) }
+
+        guard s.contains(":") else { return ipv4(s) }
+        // A dual-stack socket reports IPv4 peers as `::ffff:a.b.c.d`. Judging the mapped
+        // form as IPv6 would call every LAN peer of an IPv6 listener public.
+        if let tail = s.split(separator: ":").last, tail.contains(".") {
+            return ipv4(String(tail))
+        }
+        return ipv6(s)
+    }
+
+    private static func ipv4(_ s: String) -> IPScope {
+        let parts = s.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 4 else { return .notAnAddress }
+        var b: [Int] = []
+        for part in parts {
+            guard let v = Int(part), (0...255).contains(v) else { return .notAnAddress }
+            b.append(v)
+        }
+        if b[0] == 0 || b[0] == 10 || b[0] == 127 { return .privateOrLocal }
+        if b[0] == 172, (16...31).contains(b[1]) { return .privateOrLocal }
+        if b[0] == 192, b[1] == 168 { return .privateOrLocal }
+        if b[0] == 169, b[1] == 254 { return .privateOrLocal }
+        if b[0] == 100, (64...127).contains(b[1]) { return .carrierGradeNAT }
+        if b[0] >= 224 { return .privateOrLocal }
+        return .publicAddress
+    }
+
+    private static func ipv6(_ s: String) -> IPScope {
+        guard s.allSatisfy({ $0.isHexDigit || $0 == ":" }) else { return .notAnAddress }
+        if s == "::" || s == "::1" { return .privateOrLocal }
+        // fe80::/10 link-local, fec0::/10 site-local (deprecated but still refused),
+        // fc00::/7 unique-local, ff00::/8 multicast.
+        let leading2 = String(s.prefix(2))
+        let leading3 = String(s.prefix(3))
+        if leading2 == "fc" || leading2 == "fd" || leading2 == "ff" { return .privateOrLocal }
+        if ["fe8", "fe9", "fea", "feb", "fec", "fed", "fee", "fef"].contains(leading3) {
+            return .privateOrLocal
+        }
+        return .publicAddress
     }
 }
 

@@ -64,7 +64,7 @@ struct HostsView: View {
                                         }
                                     } else {
                                         Button("Block \(h.ip)", role: .destructive) {
-                                            Task { await model.block(ip: h.ip) }
+                                            Task { await model.requestBlock(ip: h.ip) }
                                         }
                                     }
                                     Button("Copy IP") {
@@ -97,7 +97,7 @@ struct HostsView: View {
             ), titleVisibility: .visible) {
                 if let h = confirmBlock {
                     Button("Block \(h.ip)", role: .destructive) {
-                        Task { await model.block(ip: h.ip) }
+                        Task { await model.requestBlock(ip: h.ip) }
                         confirmBlock = nil
                     }
                     Button("Cancel", role: .cancel) { confirmBlock = nil }

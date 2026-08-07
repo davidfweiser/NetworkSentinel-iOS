@@ -49,7 +49,7 @@ struct ThreatsView: View {
                         ForEach(threats.uniquedRows()) { row in
                             let t = row.value
                             ThreatRow(threat: t) {
-                                Task { await model.block(ip: t.sourceIp) }
+                                Task { await model.requestBlock(ip: t.sourceIp) }
                             }
                             .listRowBackground(NSTheme.row)
                             .listRowSeparatorTint(NSTheme.border)

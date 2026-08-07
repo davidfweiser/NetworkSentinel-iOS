@@ -685,6 +685,36 @@ final class AppModel {
 
     func block(ip: String) async { _ = await runAction("block", ip: ip) }
     func unblock(ip: String) async { _ = await runAction("unblock", ip: ip) }
+
+    // MARK: Blocking a tunnel peer
+    //
+    // 0.6's prevention engine screens CGNAT (100.64/10) out of auto-block entirely, because
+    // that range carries Tailscale and most WireGuard tunnels and dropping it is only ever
+    // a self-inflicted outage. A *manual* block still goes through — a hostile tunnel peer
+    // is real — so the desktop puts a confirmation in front of it, and so does this.
+
+    /// The address a confirmation is currently being asked about, if any.
+    var pendingTunnelBlockIP: String?
+
+    /// Every Block button in the app goes through here, so the confirmation lives in one
+    /// place instead of in each of the six views that offer one.
+    func requestBlock(ip: String) async {
+        if IPScope.of(ip) == .carrierGradeNAT {
+            pendingTunnelBlockIP = ip
+            return
+        }
+        await block(ip: ip)
+    }
+
+    /// Proceed with a block the user has just confirmed. Takes the address explicitly:
+    /// dismissing the dialog clears `pendingTunnelBlockIP`, and reading it back inside the
+    /// confirm handler would race that.
+    func confirmTunnelBlock(_ ip: String) async {
+        pendingTunnelBlockIP = nil
+        await block(ip: ip)
+    }
+
+    func cancelPendingTunnelBlock() { pendingTunnelBlockIP = nil }
     func clearThreats() async { _ = await runAction("clear_threats") }
     func toggleMonitor() async { _ = await runAction("toggle_monitor") }
     func toggleAutoblock() async { _ = await runAction("toggle_autoblock") }
@@ -699,10 +729,11 @@ final class AppModel {
     // MARK: Sleep / wake
     //
     // The web console's header Sleep ⇄ Wake button. Sleeping stops every watcher the
-    // server owns — connections, ports, auth log, closed-port probes, ARP, launch items,
-    // exfiltration, honeypot — so asleep means nothing is observed rather than a frozen
-    // dashboard. Firewall blocks stay in force: sleeping stops watching, it must never
-    // unblock an address the machine is already protected from.
+    // server owns — connections, ports, auth log, closed-port probes, ARP, startup items,
+    // exfiltration, honeypot, and on 0.6 the DNS, WireGuard, Suricata and conntrack feeds —
+    // so asleep means nothing is observed rather than a frozen dashboard. Firewall blocks
+    // stay in force: sleeping stops watching, it must never unblock an address the machine
+    // is already protected from.
     //
     // On the wire this is the same monitor state Pause sets, so what makes Sleep a
     // different thing is that the client parks too — dimmed data, a 30s heartbeat, no
@@ -773,9 +804,17 @@ final class AppModel {
     func setProcessReputation(_ on: Bool) async { await setSetting("processReputationEnabled", enabled: on) }
     func setNewListenerAlerts(_ on: Bool) async { await setSetting("newListenerAlertsEnabled", enabled: on) }
     func setArpWatch(_ on: Bool) async { await setSetting("arpWatchEnabled", enabled: on) }
-    func setLaunchItemWatch(_ on: Bool) async { await setSetting("launchItemWatchEnabled", enabled: on) }
     func setExfilMonitor(_ on: Bool) async { await setSetting("exfilMonitorEnabled", enabled: on) }
     func setHoneypot(_ on: Bool) async { await setSetting("honeypotEnabled", enabled: on) }
+
+    /// The persistence watcher answers to `launchItemWatchEnabled` on macOS and
+    /// `persistenceWatchEnabled` on Linux and Windows. Writing the name the server did not
+    /// publish comes back as `Unknown setting`, which reads as a toggle that does nothing,
+    /// so the key is taken from the state the server just sent rather than assumed.
+    func setStartupItemWatch(_ on: Bool) async {
+        guard let key = state?.settings?.startupWatchSettingKey else { return }
+        await setSetting(key, enabled: on)
+    }
 
     /// Outbound megabytes to one host per 10 minutes. The server rejects anything under 10.
     func setExfilThreshold(_ megabytes: Int) async {
@@ -797,6 +836,94 @@ final class AppModel {
     func setAutoBlockExpiry(minutes: Int) async {
         await setSetting("autoBlockExpiryMinutes", value: "\(minutes)")
     }
+
+    // MARK: Prevention, DNS, VPN and signatures (web 0.6+)
+
+    /// Dry run walks every auto-block gate and reports what it would have dropped without
+    /// writing a rule. Where a new detection source belongs before it is allowed to enforce.
+    func setPreventionDryRun(_ on: Bool) async { await setSetting("preventionDryRun", enabled: on) }
+
+    /// Conntrack `NEW` events, so an inbound connection triggers a snapshot instead of
+    /// waiting out the poll interval. Needs root on the server; without it the status says so.
+    func setConntrackEvents(_ on: Bool) async { await setSetting("conntrackEventsEnabled", enabled: on) }
+
+    func setDnsHygiene(_ on: Bool) async { await setSetting("dnsHygieneEnabled", enabled: on) }
+
+    /// Comma-separated resolver IPs. Empty is allowed and means "no approved resolvers",
+    /// which the server reports back — DoH cannot be told from web traffic without this list.
+    func setDnsApprovedResolvers(_ resolvers: String) async {
+        await setSetting("dnsApprovedResolvers", value: resolvers.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    func setWireGuardMonitor(_ on: Bool) async { await setSetting("wireGuardMonitorEnabled", enabled: on) }
+
+    /// Megabytes per peer per 10 minutes. 0 turns per-peer transfer alerts off, which is
+    /// the server's default — a peer streaming video moves gigabytes legitimately.
+    func setWireGuardPeerThreshold(_ megabytes: Int) async {
+        await setSetting("wireGuardPeerMbPer10Min", value: "\(megabytes)")
+    }
+
+    func setSuricata(_ on: Bool) async { await setSetting("suricataEnabled", enabled: on) }
+
+    /// Absolute path to Suricata's `eve.json`. Empty restores the server's own default.
+    func setSuricataEvePath(_ path: String) async {
+        await setSetting("suricataEvePath", value: path.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// 1–4, counting down as Suricata does: a lower number accepts fewer, more severe alerts.
+    func setSuricataMaxSeverity(_ severity: Int) async {
+        await setSetting("suricataMaxSeverity", value: "\(severity)")
+    }
+
+    /// Comma-separated signature ids to mute. Empty un-mutes everything.
+    func setSuricataIgnoredSids(_ sids: String) async {
+        await setSetting("suricataIgnoredSids", value: sids.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    // MARK: Remote access (web 0.5+)
+    //
+    // TLS endpoints are bound when the console starts, so everything here is saved now and
+    // served after the next restart. `httpsActive` is the only field that says what is
+    // actually being served, which is why the UI leads with it rather than with the toggle.
+
+    func setHttpsEnabled(_ on: Bool) async { await setSetting("httpsEnabled", enabled: on) }
+    func setHttpsRedirect(_ on: Bool) async { await setSetting("httpsRedirect", enabled: on) }
+    /// Passed through as typed. The server owns the rules — 1–65535, and never the port
+    /// already serving this console — and its refusal says which one you broke.
+    func setHttpsPort(_ port: String) async {
+        await setSetting("httpsPort", value: port.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// The server checks the file exists and tries to load the pair, so its reply is worth
+    /// surfacing verbatim — a path that only fails at restart means no console at all.
+    func setTlsCertPath(_ path: String) async {
+        await setSetting("tlsCertPath", value: path.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    func setTlsKeyPath(_ path: String) async {
+        await setSetting("tlsKeyPath", value: path.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    func setDuckDnsEnabled(_ on: Bool) async { await setSetting("duckDnsEnabled", enabled: on) }
+
+    func setDuckDnsDomain(_ domain: String) async {
+        await setSetting("duckDnsDomain", value: domain.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// Write-only: the server never sends a stored token back, only whether one exists.
+    /// Empty clears it.
+    func setDuckDnsToken(_ token: String) async {
+        await setSetting("duckDnsToken", value: token.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    func setAcmeEmail(_ email: String) async {
+        await setSetting("acmeEmail", value: email.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// Starts Let's Encrypt issuance through DuckDNS. It waits on DNS propagation and runs
+    /// for minutes, so the action only reports that it started — progress arrives in
+    /// `certIssueBusy` / `certIssueMessage` on the next state poll.
+    func issueCertificate() async { _ = await runAction("issue_cert") }
 
     /// Web 0.3+: block a local port (TCP/UDP, direction).
     func blockPort(_ port: Int, protocol proto: String = "TCP", direction: String = "Inbound") async {

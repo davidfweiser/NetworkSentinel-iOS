@@ -45,7 +45,7 @@ struct RootView: View {
                         onBlock: {
                             let ip = alert.threat.sourceIp
                             model.dismissCriticalAlert()
-                            Task { await model.block(ip: ip) }
+                            Task { await model.requestBlock(ip: ip) }
                         },
                         onDismiss: { model.dismissCriticalAlert() }
                     )
@@ -62,6 +62,26 @@ struct RootView: View {
         }
         .animation(.spring(response: 0.42, dampingFraction: 0.85), value: model.pendingCriticalAlert)
         .animation(.spring(response: 0.35), value: model.statusBanner)
+        // Web 0.6's prevention engine keeps auto-block off CGNAT (100.64/10) entirely,
+        // because that range carries Tailscale and most WireGuard tunnels. A manual block
+        // still reaches it — a hostile tunnel peer is a real case — so it asks first, once,
+        // here rather than in each of the views offering a Block button.
+        .confirmationDialog(
+            "Block a tunnel address?",
+            isPresented: Binding(
+                get: { model.pendingTunnelBlockIP != nil },
+                set: { if !$0 { model.cancelPendingTunnelBlock() } }
+            ),
+            titleVisibility: .visible,
+            presenting: model.pendingTunnelBlockIP
+        ) { ip in
+            Button("Block \(ip)", role: .destructive) {
+                Task { await model.confirmTunnelBlock(ip) }
+            }
+            Button("Cancel", role: .cancel) { model.cancelPendingTunnelBlock() }
+        } message: { ip in
+            Text("\(ip) is in the carrier-grade NAT range used by VPN tunnels. Blocking it cuts that peer off — which may be how you reach this server.")
+        }
     }
 }
 

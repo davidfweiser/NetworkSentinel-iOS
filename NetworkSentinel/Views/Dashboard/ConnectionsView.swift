@@ -35,7 +35,7 @@ struct ConnectionsView: View {
                             let c = row.value
                             ConnectionRow(connection: c) {
                                 if let ip = c.remoteAddress, !ip.isEmpty {
-                                    Task { await model.block(ip: ip) }
+                                    Task { await model.requestBlock(ip: ip) }
                                 }
                             }
                             .listRowBackground(NSTheme.row)

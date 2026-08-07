@@ -9,9 +9,11 @@
 /* Begin PBXBuildFile section */
 		0C8A3577C99E5A2B5D695815 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB594FE9C08F6FEA200A0FDA /* RootView.swift */; };
 		19E6907F6427C5C3AC57A70F /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2FFB791D1583B17EE570607 /* Theme.swift */; };
+		1D5E7A0C4B39F26018AC33E1 /* TextSettingEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E6F8B1D5C4A037129BD44F2 /* TextSettingEditor.swift */; };
 		1EAC1C695D52311BE310C156 /* ActivityChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0B0056D021904EFB326DD0 /* ActivityChart.swift */; };
 		38D188CF1B276138BB3CC10E /* AuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B8AF44484F464EAD93296DD /* AuthView.swift */; };
 		3CE2B8850CC791A3F1019D4E /* BackgroundRefresh.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6EF72769ACEFB56906AE266 /* BackgroundRefresh.swift */; };
+		3F70AC2E6D5B148230CE55A3 /* WireGuardPeersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40819BD3F7E6259341DF66B4 /* WireGuardPeersView.swift */; };
 		432310299222C289433DC265 /* ThreatsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4532945338DDCF9B2A15610A /* ThreatsView.swift */; };
 		499C268941C90A4EED1C689B /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBA5D1340BDB96309E3FF80D /* AppModel.swift */; };
 		505661F98DD4B0C33656D53B /* ChangePasswordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE8874F597FEA5362A4FDC39 /* ChangePasswordView.swift */; };
@@ -34,8 +36,10 @@
 		014224BED0A02422C9D2B0DF /* NetworkSentinel.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NetworkSentinel.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		1A0B0056D021904EFB326DD0 /* ActivityChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityChart.swift; sourceTree = "<group>"; };
 		1F580F2DAB752302A83956B6 /* NetworkSentinelApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkSentinelApp.swift; sourceTree = "<group>"; };
+		2E6F8B1D5C4A037129BD44F2 /* TextSettingEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextSettingEditor.swift; sourceTree = "<group>"; };
 		3AE7012AC9352A900E8DE772 /* ServersListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServersListView.swift; sourceTree = "<group>"; };
 		3B676AA60D502FB7A12C8AA2 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		40819BD3F7E6259341DF66B4 /* WireGuardPeersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WireGuardPeersView.swift; sourceTree = "<group>"; };
 		4532945338DDCF9B2A15610A /* ThreatsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreatsView.swift; sourceTree = "<group>"; };
 		59C15DFCA866379A7FFCEFE5 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
 		5B8AF44484F464EAD93296DD /* AuthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthView.swift; sourceTree = "<group>"; };
@@ -104,6 +108,7 @@
 			isa = PBXGroup;
 			children = (
 				1A0B0056D021904EFB326DD0 /* ActivityChart.swift */,
+				2E6F8B1D5C4A037129BD44F2 /* TextSettingEditor.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -138,6 +143,7 @@
 				A0C41C43A94E5FC1124AC0D7 /* HostsView.swift */,
 				E8030D8B55F5057DCDA4EA02 /* MoreView.swift */,
 				4532945338DDCF9B2A15610A /* ThreatsView.swift */,
+				40819BD3F7E6259341DF66B4 /* WireGuardPeersView.swift */,
 			);
 			path = Dashboard;
 			sourceTree = "<group>";
@@ -233,8 +239,10 @@
 				0C8A3577C99E5A2B5D695815 /* RootView.swift in Sources */,
 				E86441C60E3EAC9699D57181 /* ServerStore.swift in Sources */,
 				C6A4771FCAC18DF995E192B5 /* ServersListView.swift in Sources */,
+				1D5E7A0C4B39F26018AC33E1 /* TextSettingEditor.swift in Sources */,
 				19E6907F6427C5C3AC57A70F /* Theme.swift in Sources */,
 				432310299222C289433DC265 /* ThreatsView.swift in Sources */,
+				3F70AC2E6D5B148230CE55A3 /* WireGuardPeersView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
