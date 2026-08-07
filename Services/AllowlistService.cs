@@ -240,7 +240,7 @@ public sealed class AllowlistService : IDisposable
             Ips = new List<string>(),
             Notes = "Add domains like \"myservice.example.com\" or literal IPs. Built-in defaults are always merged."
         };
-        File.WriteAllText(LocalDatabasePath, JsonSerializer.Serialize(seed, JsonOptions));
+        AppPaths.WriteAtomic(LocalDatabasePath, JsonSerializer.Serialize(seed, JsonOptions));
     }
 
     private void LoadAllSources(bool includeRemote)
@@ -324,7 +324,7 @@ public sealed class AllowlistService : IDisposable
             var cachePath = Path.Combine(
                 Path.GetDirectoryName(LocalDatabasePath)!,
                 "allowlist-remote-cache.json");
-            await File.WriteAllTextAsync(cachePath, JsonSerializer.Serialize(file, JsonOptions), ct);
+            AppPaths.WriteAtomic(cachePath, JsonSerializer.Serialize(file, JsonOptions));
             RebuildEntryViews();
         }
         catch (Exception ex)
@@ -512,7 +512,7 @@ public sealed class AllowlistService : IDisposable
                 Domains = userDomains,
                 Ips = userIps
             };
-            File.WriteAllText(LocalDatabasePath, JsonSerializer.Serialize(file, JsonOptions));
+            AppPaths.WriteAtomic(LocalDatabasePath, JsonSerializer.Serialize(file, JsonOptions));
         }
         catch
         {
