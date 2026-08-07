@@ -81,6 +81,11 @@ struct FirewallInfo: Codable {
 struct SettingsInfo: Codable {
     let autoBlockEnabled: Bool?
     let autoBlockMinLevel: String?
+    /// The engine's own one-line summary — web ≥ 0.6.3. Every frontend used to build this
+    /// string itself and every one of them dropped the same thing: dry run. The server
+    /// publishes it so a console cannot read "Auto-block ON" while the engine is
+    /// deliberately writing no rules.
+    let autoBlockSummary: String?
     let blockInbound: Bool?
     let blockOutbound: Bool?
     /// Present on Network Sentinel web ≥ 0.3.0
@@ -312,6 +317,11 @@ struct ThreatInfo: Codable, Identifiable {
             type ?? "",
             detail ?? "",
             method ?? ""
+            // Deliberately not the 0.6.3 enforcement verdict. A threat is a record of what
+            // was seen, and blocking moves underneath it afterwards — a rule gets written,
+            // expires, or is released by hand. Folding the verdict into the identity would
+            // mint a fresh id for an event already reported, and `CriticalAlertService`
+            // would notify about it a second time on the poll that blocked it.
         ].joined(separator: "|")
     }
     /// Full ISO-8601 timestamp — present on web ≥ 0.3.5. Older servers send only `time`.
@@ -325,6 +335,44 @@ struct ThreatInfo: Codable, Identifiable {
     let detail: String?
     let origin: String?
     let method: String?
+
+    // MARK: Enforcement verdict (web ≥ 0.6.3)
+    //
+    // The server now runs each batch of threats past the prevention engine before any
+    // alert about it leaves the machine, so a warning that names an address can say
+    // whether that address is actually being blocked. All three fields are absent on
+    // older servers and null on a threat that names no blockable address, which is the
+    // difference between "not blocked" and "nothing to block".
+
+    /// The full sentence, for the line under the row — `BLOCKED — auto-block rule added`,
+    /// `NOT blocked — auto-block is off`, `Not blocked — allowlisted (…)`.
+    let blockStatus: String?
+    /// The same verdict in one word: `Blocked`, `Dry run`, `Failed` or `No`. The server
+    /// settled this vocabulary once so its GUI, TUI and web console cannot describe the
+    /// same state three ways — but it is worded for a cell under a *Blocked* column, and
+    /// a phone list has no column header to read it against. The app maps it to the
+    /// self-contained `BlockVerdict.label` and leaves `blockStatus` to say why, verbatim.
+    let blockShort: String?
+    /// True when traffic to and from the address is being dropped right now.
+    let blocked: Bool?
+
+    /// Where `sourceIp` stands with the prevention engine, or nil when there is nothing
+    /// to say — an older server, or a threat naming no blockable address.
+    ///
+    /// Suppressed for the host-local detections too. The server does answer for those
+    /// ("Not blocked — private address, never auto-blocked"), but the row has already
+    /// replaced the address with *what* was detected, exactly because there is no peer to
+    /// firewall; a "No" beside it only raises a question the row has already answered.
+    var blockVerdict: BlockVerdict? {
+        guard isBlockable, let short = blockShort, !short.isEmpty else { return nil }
+        if blocked == true { return .blocked }
+        switch short.lowercased() {
+        case "blocked": return .blocked
+        case "dry run": return .dryRun
+        case "failed": return .failed
+        default: return .notBlocked
+        }
+    }
 
     /// Whether offering **Block** on this threat leads anywhere.
     ///
@@ -363,6 +411,66 @@ struct ThreatInfo: Codable, Identifiable {
         default: return "exclamationmark.triangle"
         }
     }
+}
+
+// MARK: - Enforcement verdict
+
+/// The prevention engine's answer to "is this address being blocked?", which web 0.6.3
+/// attaches to every threat it reports.
+///
+/// A warning that names an address and stops there sends you to the console to find out
+/// whether anything was actually done about it — at the one moment that is least
+/// affordable. The server therefore decides before the alert leaves the machine, and this
+/// enum only chooses how the answer is coloured and whether the row's action should be
+/// Block or Unblock. The words themselves stay the server's.
+enum BlockVerdict {
+    /// A rule is in force — traffic to and from the address is being dropped.
+    case blocked
+    /// It cleared every gate, but prevention is in dry-run mode so no rule was written.
+    case dryRun
+    /// A block was attempted and the firewall refused it.
+    case failed
+    /// Deliberately left alone; `ThreatInfo.blockStatus` names the gate that stopped it.
+    case notBlocked
+
+    /// Red for an address being dropped — the same badge the Hosts tab already gives a
+    /// blocked peer. Amber for the two verdicts that are *not* stopping anything and want
+    /// a look; muted for one that was left alone on purpose.
+    var tint: Color {
+        switch self {
+        case .blocked: return NSTheme.danger
+        case .dryRun, .failed: return NSTheme.warning
+        case .notBlocked: return NSTheme.muted
+        }
+    }
+
+    /// Reads on its own, without the column header the server's own word assumes.
+    var label: String {
+        switch self {
+        case .blocked: return "Blocked"
+        case .dryRun: return "Dry run"
+        case .failed: return "Block failed"
+        case .notBlocked: return "Not blocked"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .blocked: return "hand.raised.fill"
+        case .dryRun: return "eye"
+        case .failed: return "exclamationmark.triangle.fill"
+        case .notBlocked: return "hand.raised.slash"
+        }
+    }
+
+    /// How an alert leads with this verdict, in the same two forms the server's own
+    /// desktop popups, browser notifications and webhooks use. Dry run and a refused rule
+    /// both count as NOT blocked here, because neither one is stopping anything.
+    var alertPrefix: String { isBlocked ? "Blocked" : "NOT blocked" }
+
+    /// Whether the useful action on this address is to release it rather than block it.
+    /// Re-blocking would only rewrite a rule already in force.
+    var isBlocked: Bool { self == .blocked }
 }
 
 // MARK: - Address scope
