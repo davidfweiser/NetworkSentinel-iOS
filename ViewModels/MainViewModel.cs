@@ -256,17 +256,22 @@ public partial class MainViewModel : ObservableObject, IDisposable
         try
         {
             await _allowlist.InitializeAsync();
+
+            // The firewall call runs before marshalling to the UI thread, not inside
+            // the InvokeAsync lambda: it shells out to pfctl and can raise the admin
+            // password dialog, which froze the window during startup.
+            var restored = _firewall.IsAdministrator
+                ? await Task.Run(() => _firewall.UnblockAllowlistedAddresses())
+                : null;
+
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 SyncAllowlistUi();
-                if (IsAdmin)
+                if (restored != null && restored.Success &&
+                    !restored.Message.Contains("No allowlisted", StringComparison.OrdinalIgnoreCase))
                 {
-                    var restored = _firewall.UnblockAllowlistedAddresses();
-                    if (restored.Success && !restored.Message.Contains("No allowlisted", StringComparison.OrdinalIgnoreCase))
-                    {
-                        FirewallMessage = restored.Message;
-                        RefreshFirewallRules();
-                    }
+                    FirewallMessage = restored.Message;
+                    RefreshFirewallRules();
                 }
             });
         }
@@ -1287,11 +1292,13 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         if (!answer) return;
 
-        var result = _firewall.BlockPort(
+        // Off the UI thread: firewall calls shell out to osascript/pfctl, and the
+        // admin password dialog would otherwise freeze the whole window.
+        var result = await Task.Run(() => _firewall.BlockPort(
             port.Port,
             port.Protocol,
             FirewallDirection.Inbound,
-            $"Port block · {port.ServiceHint} · {port.ProcessName}");
+            $"Port block · {port.ServiceHint} · {port.ProcessName}"));
 
         FirewallMessage = result.Message;
         await DialogService.ShowInfoAsync(result.Message, "Firewall");
@@ -1339,7 +1346,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
 
         var direction = ResolveDirection();
-        var result = _firewall.BlockPort(port, ManualBlockProtocol, direction, "Manual port block from Firewall tab");
+        var result = await Task.Run(() =>
+            _firewall.BlockPort(port, ManualBlockProtocol, direction, "Manual port block from Firewall tab"));
         FirewallMessage = result.Message;
         if (!result.Success)
             await DialogService.ShowWarningAsync(result.Message, "Firewall");
@@ -1366,7 +1374,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var answer = await DialogService.ConfirmAsync($"Remove firewall rule?\n\n{name}", "Remove rule");
         if (!answer) return;
 
-        var result = _firewall.RemoveRule(name);
+        var result = await Task.Run(() => _firewall.RemoveRule(name));
         FirewallMessage = result.Message;
         SelectedFirewallRule = null;
         RefreshFirewallRules();
@@ -1387,7 +1395,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             "Remove all managed rules");
         if (!answer) return;
 
-        var result = _firewall.RemoveAllManagedRules();
+        var result = await Task.Run(() => _firewall.RemoveAllManagedRules());
         FirewallMessage = result.Message;
         RefreshFirewallRules();
         RefreshCollections();
@@ -1403,7 +1411,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             SyncAllowlistUi();
             if (IsAdmin)
             {
-                var restored = _firewall.UnblockAllowlistedAddresses();
+                var restored = await Task.Run(() => _firewall.UnblockAllowlistedAddresses());
                 FirewallMessage = restored.Message;
                 RefreshFirewallRules();
                 RefreshCollections();
@@ -1440,7 +1448,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             SyncAllowlistUi();
             if (IsAdmin)
             {
-                var restored = _firewall.UnblockAllowlistedAddresses();
+                var restored = await Task.Run(() => _firewall.UnblockAllowlistedAddresses());
                 if (restored.Success)
                     FirewallMessage = message + " · " + restored.Message;
                 RefreshFirewallRules();
@@ -1489,7 +1497,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             return;
         }
 
-        var result = _firewall.UnblockAllowlistedAddresses();
+        var result = await Task.Run(() => _firewall.UnblockAllowlistedAddresses());
         FirewallMessage = result.Message;
         await DialogService.ShowInfoAsync(result.Message, "Restore allowlisted");
         RefreshFirewallRules();
@@ -1576,7 +1584,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         if (!answer) return false;
 
-        var result = _firewall.BlockIp(normalized, direction, reason, overrideAllowlist);
+        var result = await Task.Run(() => _firewall.BlockIp(normalized, direction, reason, overrideAllowlist));
         FirewallMessage = result.Message;
         await DialogService.ShowInfoAsync(result.Message, "Firewall");
 
@@ -1593,7 +1601,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             return;
         }
 
-        var result = _firewall.UnblockIp(ip);
+        var result = await Task.Run(() => _firewall.UnblockIp(ip));
         if (result.Success && FirewallService.TryNormalizeIp(ip, out var normalized, out _))
         {
             lock (_autoBlockGate)
