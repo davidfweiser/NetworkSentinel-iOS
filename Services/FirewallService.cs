@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Net;
+using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
@@ -1074,6 +1075,16 @@ public sealed class FirewallService
             error = $"Invalid IP address: {ip}";
             return false;
         }
+
+        // ::ffff:a.b.c.d is how dual-stack sockets report IPv4 peers — rules and
+        // bookkeeping should use the IPv4 form so both spellings mean one address.
+        if (address.IsIPv4MappedToIPv6)
+            address = address.MapToIPv4();
+
+        // Drop any IPv6 zone id (fe80::1%en0 parses fine but pfctl rejects it in a
+        // rule, and two zone spellings of one address must compare equal).
+        if (address.AddressFamily == AddressFamily.InterNetworkV6 && address.ScopeId != 0)
+            address = new IPAddress(address.GetAddressBytes());
 
         normalized = address.ToString();
         return true;
