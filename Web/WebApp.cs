@@ -47,8 +47,10 @@ public sealed class WebApp : IDisposable
     private readonly AllowlistService _allowlist;
     private readonly WebAuthStore _auth = new();
     private readonly AppSettings _settings;
-    private readonly object _autoBlockGate = new();
-    private readonly Dictionary<string, DateTime> _autoBlockAttempted = new(StringComparer.OrdinalIgnoreCase);
+    // The blocked set, the retry backoff and the suppression list all live in
+    // PreventionService now — this class kept its own copies of all three, and was the
+    // only frontend whose copy honoured suppression.
+    private readonly PreventionService _prevention;
     /// <summary>
     /// IPs the user explicitly unblocked/removed. Auto-block must not recreate rules for these
     /// until the user manually blocks again (or the suppress window expires).
@@ -75,9 +77,6 @@ public sealed class WebApp : IDisposable
     private string _autoBlockMinLevel;
     private bool _blockInbound;
     private bool _blockOutbound;
-    private HashSet<string> _blockedIps = new(StringComparer.OrdinalIgnoreCase);
-    private DateTime _blockedIpsRefreshedAt = DateTime.MinValue;
-    private bool _blockedIpsRefreshInFlight;
     private readonly string _appVersion = FormatAppVersion();
 
     public int Port => _port;
@@ -93,6 +92,7 @@ public sealed class WebApp : IDisposable
         _monitor = _core.Monitor;
         _firewall = _core.Firewall;
         _allowlist = _core.Allowlist;
+        _prevention = _core.Prevention;
         ApplyTlsOverrides(tlsOverrides);
         _autoBlockEnabled = _settings.AutoBlockEnabled;
         _autoBlockMinLevel = _settings.AutoBlockMinLevel;
@@ -140,7 +140,11 @@ public sealed class WebApp : IDisposable
             Console.Error.WriteLine(_statusMessage);
         }
 
-        LoadPersistedAutoBlockSuppressions();
+        // The clamp above can change the level, so push it to the engine explicitly.
+        // Persisted suppressions are loaded by PreventionService itself.
+        _prevention.MinLevel = Enum.TryParse<ThreatLevel>(_autoBlockMinLevel, true, out var lvl)
+            ? lvl
+            : ThreatLevel.High;
         RefreshBlockedIps(force: true);
         _monitor.Start();
         StartDuckDns();
@@ -843,6 +847,7 @@ public sealed class WebApp : IDisposable
 
                 case "toggle_autoblock":
                     _autoBlockEnabled = !_autoBlockEnabled;
+                    _prevention.Enabled = _autoBlockEnabled;
                     _settings.AutoBlockEnabled = _autoBlockEnabled;
                     _settings.Save();
                     _statusMessage = _autoBlockEnabled
@@ -858,6 +863,7 @@ public sealed class WebApp : IDisposable
                         nameof(ThreatLevel.High) => nameof(ThreatLevel.Critical),
                         _ => nameof(ThreatLevel.Medium)
                     };
+                    _prevention.MinLevel = ParseLevel(_autoBlockMinLevel);
                     _settings.AutoBlockMinLevel = _autoBlockMinLevel;
                     _settings.Save();
                     _statusMessage = $"Auto-block minimum severity: {_autoBlockMinLevel}";
@@ -869,6 +875,7 @@ public sealed class WebApp : IDisposable
                     if (level is not (nameof(ThreatLevel.Medium) or nameof(ThreatLevel.High) or nameof(ThreatLevel.Critical)))
                         return ActionResultDto.Fail("Level must be Medium, High, or Critical.");
                     _autoBlockMinLevel = level;
+                    _prevention.MinLevel = ParseLevel(level);
                     _settings.AutoBlockMinLevel = level;
                     _settings.Save();
                     _statusMessage = $"Auto-block minimum severity: {_autoBlockMinLevel}";
@@ -890,16 +897,26 @@ public sealed class WebApp : IDisposable
                     {
                         case "autoBlockEnabled":
                             _autoBlockEnabled = on;
+                            _prevention.Enabled = on;
                             _settings.AutoBlockEnabled = on;
                             label = on ? $"Auto-block ON (≥ {_autoBlockMinLevel})" : "Auto-block OFF";
                             break;
+                        case "preventionDryRun":
+                            _prevention.DryRun = on;
+                            _settings.PreventionDryRun = on;
+                            label = on
+                                ? "Dry run on — auto-block reports what it would drop, without writing rules"
+                                : "Dry run off — auto-block writes PF rules";
+                            break;
                         case "blockInbound":
                             _blockInbound = on;
+                            _prevention.BlockInbound = on;
                             _settings.AutoBlockInbound = on;
                             label = $"Block inbound: {(on ? "on" : "off")}";
                             break;
                         case "blockOutbound":
                             _blockOutbound = on;
+                            _prevention.BlockOutbound = on;
                             _settings.AutoBlockOutbound = on;
                             label = $"Block outbound: {(on ? "on" : "off")}";
                             break;
@@ -1155,7 +1172,7 @@ public sealed class WebApp : IDisposable
                     if (r.Success)
                     {
                         foreach (var ip in blockedBefore)
-                            SuppressAutoBlock(ip);
+                            _prevention.NoteUnblocked(ip);
                         RefreshBlockedIps(force: true);
                     }
                     _statusMessage = r.Message;
@@ -1165,8 +1182,15 @@ public sealed class WebApp : IDisposable
                 case "authorize":
                 {
                     var r = _firewall.AuthorizeElevation();
-                    if (r.Success && _settings.ProbeLogEnabled)
-                        _firewall.EnableProbeLogging();
+                    if (r.Success)
+                    {
+                        // Lifts the auto-block stand-down, which was otherwise cleared
+                        // only by time — so authorizing successfully changed nothing for
+                        // five minutes while the console kept reporting it as paused.
+                        _prevention.NoteElevationAuthorized();
+                        if (_settings.ProbeLogEnabled)
+                            _firewall.EnableProbeLogging();
+                    }
                     _statusMessage = r.Message;
                     return r.Success ? ActionResultDto.Success(r.Message) : ActionResultDto.Fail(r.Message);
                 }
@@ -1182,8 +1206,9 @@ public sealed class WebApp : IDisposable
                     if (r.Success)
                     {
                         var key = FirewallService.TryNormalizeIp(ip, out var normalized, out _) ? normalized : ip;
-                        ClearAutoBlockSuppress(key);
-                        lock (_autoBlockGate) _blockedIps.Add(key);
+                        // Blocking by hand is an explicit reversal of an earlier release.
+                        _prevention.ClearSuppression(key);
+                        _prevention.NoteBlocked(key);
                         RefreshBlockedIps(force: true);
                     }
                     _statusMessage = r.Message;
@@ -1201,10 +1226,7 @@ public sealed class WebApp : IDisposable
                     if (r.Success)
                     {
                         if (FirewallService.TryNormalizeIp(ip, out var normalized, out _))
-                        {
-                            SuppressAutoBlock(normalized);
-                            lock (_autoBlockGate) _blockedIps.Remove(normalized);
-                        }
+                            _prevention.NoteUnblocked(normalized);
                         RefreshBlockedIps(force: true);
                     }
                     _statusMessage = r.Message;
@@ -1295,7 +1317,7 @@ public sealed class WebApp : IDisposable
                     {
                         // Keep auto-block from immediately recreating the same IP block.
                         if (FirewallService.TryExtractIpFromManagedRule(name, null, out var removedIp))
-                            SuppressAutoBlock(removedIp);
+                            _prevention.NoteUnblocked(removedIp);
 
                         try { RefreshBlockedIps(force: true); }
                         catch { /* ignore */ }
@@ -1317,7 +1339,7 @@ public sealed class WebApp : IDisposable
     private object BuildState()
     {
         RefreshBlockedIps(force: false);
-        var blocked = _blockedIps;
+        var blocked = _prevention.BlockedIps;
         var stats = _monitor.Stats;
 
         return new
@@ -1336,6 +1358,7 @@ public sealed class WebApp : IDisposable
             {
                 autoBlockEnabled = _autoBlockEnabled,
                 autoBlockMinLevel = _autoBlockMinLevel,
+                preventionDryRun = _prevention.DryRun,
                 blockInbound = _blockInbound,
                 blockOutbound = _blockOutbound,
                 geoLookupEnabled = _settings.GeoLookupEnabled,
@@ -1501,142 +1524,32 @@ public sealed class WebApp : IDisposable
         });
     }
 
+    /// <summary>
+    /// Every gate and every rule write lives in PreventionService now. This console was
+    /// the only one of the three frontends that honoured the manual-unblock suppression
+    /// list; the engine gives the GUI and TUI the same behaviour instead of this one
+    /// keeping its own copy of it.
+    /// </summary>
     private void ProcessAutoBlocks(IReadOnlyList<ThreatEvent> threats)
     {
-        if (!_autoBlockEnabled)
+        var result = _prevention.Apply(threats);
+        if (!result.HasMessages)
             return;
 
-        if (!_firewall.IsAdministrator)
-        {
-            _statusMessage = "Auto-block ON, but no elevation available — need root or admin rights (osascript/sudo).";
-            return;
-        }
-
-        var minLevel = Enum.TryParse<ThreatLevel>(_autoBlockMinLevel, true, out var level)
-            ? level
-            : ThreatLevel.High;
-        var direction = ResolveDirection();
-        var messages = new List<string>();
-
-        foreach (var threat in threats)
-        {
-            if (threat.Level < minLevel)
-                continue;
-            if (threat.Type == ThreatType.NewRemoteHost)
-                continue;
-            if (!FirewallService.TryNormalizeIp(threat.SourceIp, out var ip, out _))
-                continue;
-            if (FirewallService.IsPrivateOrLocal(ip))
-                continue;
-            if (_allowlist.IsAllowed(ip, out _))
-                continue;
-
-            lock (_autoBlockGate)
-            {
-                if (_blockedIps.Contains(ip))
-                    continue;
-                if (_autoBlockSuppressedUntil.TryGetValue(ip, out var until) && DateTime.UtcNow < until)
-                    continue;
-                if (_autoBlockAttempted.TryGetValue(ip, out var lastAttempt) &&
-                    DateTime.UtcNow - lastAttempt < AutoBlockRetryAfter)
-                    continue;
-                _autoBlockAttempted[ip] = DateTime.UtcNow;
-            }
-
-            var reason = $"Auto-block · {threat.LevelText} · {threat.TypeText}: {threat.Title}";
-            var result = _firewall.BlockIp(ip, direction, reason, expiresAfter: _firewall.AutoBlockExpiry);
-            if (result.Success)
-            {
-                lock (_autoBlockGate) _blockedIps.Add(ip);
-                messages.Add($"Auto-blocked {ip}");
-            }
-            else
-            {
-                messages.Add($"Auto-block failed {ip}: {result.Message}");
-                lock (_autoBlockGate) _autoBlockAttempted.Remove(ip);
-            }
-        }
-
-        if (messages.Count > 0)
-        {
-            _statusMessage = string.Join(" · ", messages);
+        _statusMessage = result.Summary;
+        if (result.RulesChanged)
             RefreshBlockedIps(force: true);
-        }
     }
+
+    private static ThreatLevel ParseLevel(string value)
+        => Enum.TryParse<ThreatLevel>(value, true, out var level) ? level : ThreatLevel.High;
 
     private void RefreshBlockedIps(bool force)
-    {
-        if (_blockedIpsRefreshInFlight)
-            return;
-        if (!force && DateTime.UtcNow - _blockedIpsRefreshedAt < TimeSpan.FromSeconds(15))
-            return;
-
-        _blockedIpsRefreshInFlight = true;
-        _ = Task.Run(() =>
+        => _prevention.RefreshBlockedIps(force, set =>
         {
-            try
-            {
-                var set = _firewall.GetBlockedIps();
-                _blockedIps = set;
-                _blockedIpsRefreshedAt = DateTime.UtcNow;
-                foreach (var host in _monitor.RemoteHosts)
-                    host.IsBlocked = set.Contains(host.IpAddress);
-            }
-            catch
-            {
-                // keep previous set
-            }
-            finally
-            {
-                _blockedIpsRefreshInFlight = false;
-            }
+            foreach (var host in _monitor.RemoteHosts)
+                host.IsBlocked = set.Contains(host.IpAddress);
         });
-    }
-
-    private void SuppressAutoBlock(string ip)
-    {
-        var until = DateTime.UtcNow.Add(ManualUnblockSuppressFor);
-        lock (_autoBlockGate)
-        {
-            _blockedIps.Remove(ip);
-            // Leave a long cooldown marker so concurrent threat handlers also skip briefly.
-            _autoBlockAttempted[ip] = DateTime.UtcNow;
-            _autoBlockSuppressedUntil[ip] = until;
-        }
-
-        _settings.AutoBlockSuppressedUntil[ip] = until;
-        PruneExpiredSuppressions(_settings.AutoBlockSuppressedUntil);
-        _settings.Save();
-    }
-
-    private void ClearAutoBlockSuppress(string ip)
-    {
-        lock (_autoBlockGate)
-            _autoBlockSuppressedUntil.Remove(ip);
-
-        if (_settings.AutoBlockSuppressedUntil.Remove(ip))
-            _settings.Save();
-    }
-
-    private void LoadPersistedAutoBlockSuppressions()
-    {
-        lock (_autoBlockGate)
-        {
-            _autoBlockSuppressedUntil.Clear();
-            foreach (var kv in _settings.AutoBlockSuppressedUntil)
-            {
-                if (kv.Value > DateTime.UtcNow)
-                    _autoBlockSuppressedUntil[kv.Key] = kv.Value;
-            }
-        }
-    }
-
-    private static void PruneExpiredSuppressions(Dictionary<string, DateTime> map)
-    {
-        var now = DateTime.UtcNow;
-        foreach (var key in map.Where(kv => kv.Value <= now).Select(kv => kv.Key).ToList())
-            map.Remove(key);
-    }
 
     /// <summary>
     /// Picks a free port from preferred uncommon high ports, or an OS ephemeral port.
@@ -2832,6 +2745,7 @@ public sealed class WebApp : IDisposable
       <div class="settings-group"><h3>Auto-block</h3>
         ${row('Auto-block threats', 'Automatically create firewall rules when threats are detected.', sw('autoBlockEnabled', s.autoBlockEnabled))}
         ${row('Minimum severity', 'Only auto-block threats at or above this level.', levelSel)}
+        ${row('Dry run', 'Decide and report auto-blocks without writing any PF rule. Every gate still runs and the status line still names what would have been blocked — the safe way to try a noisy new detection source before letting it drop traffic.', sw('preventionDryRun', s.preventionDryRun))}
         ${row('Block inbound', 'New block rules stop traffic coming in to this machine.', sw('blockInbound', s.blockInbound))}
         ${row('Block outbound', 'New block rules stop traffic going out from this machine.', sw('blockOutbound', s.blockOutbound))}
         ${row('Auto-block expiry (minutes)', 'Automatically remove auto-created block rules after this many minutes (0 = never). Cleanup is silent when possible, otherwise happens at the next firewall change.', txt('autoBlockExpiryMinutes', s.autoBlockExpiryMinutes ?? 0, '0'))}

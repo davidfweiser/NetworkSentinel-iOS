@@ -330,6 +330,14 @@ The token is written to `duckdns.json` (mode `0600`), not `settings.json`; the G
 4. Public IPs that hit that severity get PF drop rules automatically.
 5. Private/LAN addresses, “new host” info events, and allowlisted sites are **never** auto-blocked.
 
+**One enforcement engine.** Every automatic block goes through `PreventionService`, whatever raised the threat and whichever frontend is running. The gates run cheapest-first and a threat must clear all of them:
+
+> severity ≥ minimum → not informational-only → routable public IP → not allowlisted → not this machine's own address → not a protected endpoint (WireGuard peers) → not operator-protected → not already blocked → not suppressed by a manual unblock → not attempted in the last 10 minutes
+
+This replaced three near-identical copies of the auto-block loop that had drifted: only the web console honoured the manual-unblock suppression list, so the desktop GUI and the TUI would re-block an address you had just deliberately released. Releasing an address by hand now suppresses auto-block for it for 24 hours, in every frontend, and that survives a restart. Blocking it again by hand clears the suppression.
+
+**Dry run** (Settings → Auto-block) decides and reports blocks without writing any PF rule. Every gate still runs and the status line still names what *would* have been dropped. Inline prevention turns a false positive from noise into an outage, so this is the safe way to promote a noisy new detection source from alerting to blocking. Dry run deliberately does not consume an address's retry slot, so switching blocking on afterwards acts on exactly the addresses you were just watching.
+
 **What auto-block will never touch.** LAN, loopback, link-local, multicast/broadcast, and **CGNAT (100.64.0.0/10** — where Tailscale and many VPN tunnel subnets live**)**. Blocking a CGNAT address would only ever cut off a tunnel peer, so it is not something a heuristic should decide.
 
 **Startup reconciliation.** `firewall-rules.json` survives a reboot; the rules loaded into PF do not — macOS boots with PF disabled unless something enables it. Without a check, the app would report addresses as blocked and auto-block would skip re-blocking a still-active attacker, while nothing was actually in force. At startup Network Sentinel lists the anchor's live rules and, if any ledger entry is missing, re-applies the generated ruleset. If the re-apply fails it drops those entries instead, so auto-block stops believing they are covered. This only runs when elevation is silent (root, or cached/passwordless `sudo`) — startup never raises a password dialog. Otherwise it is skipped and retried on the next start.

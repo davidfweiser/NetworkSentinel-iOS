@@ -50,6 +50,13 @@ public sealed class AppSettings
     /// </summary>
     public Dictionary<string, DateTime> AutoBlockSuppressedUntil { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Decide and report auto-blocks without writing PF rules. Inline prevention turns a
+    /// false positive into an outage, so a noisy new detection source should run here
+    /// first — watch what it would have dropped before letting it drop anything.
+    /// </summary>
+    public bool PreventionDryRun { get; set; }
+
     /// <summary>Check remote IPs against public threat-intel blocklists (FireHOL level1, Spamhaus DROP).</summary>
     public bool ThreatIntelEnabled { get; set; } = true;
 

@@ -1,3 +1,5 @@
+using NetworkSentinel.Models;
+
 namespace NetworkSentinel.Services;
 
 /// <summary>
@@ -18,10 +20,17 @@ public sealed class SentinelCore : IDisposable
     public NetworkMonitorService Monitor { get; } = new();
     public FirewallService Firewall { get; } = new();
     public AllowlistService Allowlist { get; } = new();
+    public PreventionService Prevention { get; }
 
     public SentinelCore(AppSettings? settings = null)
     {
         Settings = settings ?? AppSettings.Load();
+
+        Prevention = new PreventionService(Firewall, Allowlist, Settings);
+        // A persisted value outside the offered range (hand-edited settings.json)
+        // must not silently arm auto-block at Low.
+        if (Prevention.MinLevel is not (ThreatLevel.Medium or ThreatLevel.High or ThreatLevel.Critical))
+            Prevention.MinLevel = ThreatLevel.High;
 
         Firewall.Allowlist = Allowlist;
         Firewall.AutoBlockExpiry = ExpiryMinutesToSpan(Settings.AutoBlockExpiryMinutes);
