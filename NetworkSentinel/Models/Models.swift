@@ -358,8 +358,8 @@ struct ThreatInfo: Codable, Identifiable {
         case "rapid reconnect", "short-lived burst": return "arrow.left.arrow.right"
         // Web 0.6.0
         case "signature match": return "doc.text.magnifyingglass"
-        case "vpn peer change": return "key.horizontal"
-        case "dns anomaly": return "character.magnify"
+        case "vpn peer change": return "key.fill"
+        case "dns anomaly": return "magnifyingglass.circle"
         default: return "exclamationmark.triangle"
         }
     }
