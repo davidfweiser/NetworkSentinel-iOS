@@ -166,6 +166,14 @@ sudo ./NetworkSentinel --set-master-password
 
 That requires root and resolves the real target user via `SUDO_USER` (using `dscl`), so the hash lands in **your** `~/Library/Application Support/NetworkSentinel/web-master.json` — not root's. Restart the web console afterwards so it picks up the change. The hash is PBKDF2-SHA256 (random salt, 200k iterations) — never plain text.
 
+**Setup code for remote first visits.** Creating the master password from **another machine** additionally asks for a one-time **setup code**, printed where the console runs — the terminal, or the unified log when it runs as a launchd service:
+
+```bash
+log show --last 10m --predicate 'process == "NetworkSentinel"' | grep "Setup code"
+```
+
+The console binds all interfaces before any password exists, so without this the first scanner to find the port could claim the master password and with it firewall control. The code is random per process start and compared in constant time; wrong guesses feed the same per-IP lockout as wrong passwords. Setup from **localhost needs no code**, and the login page only shows the field when the server says it applies.
+
 The web console **refuses to block its own port**, which would otherwise cut off your browser mid-request and look like a crash.
 
 Failed password attempts are throttled **per client IP**: five wrong guesses trigger a lockout that doubles with each further attempt (1 minute up to 1 hour), and locked-out clients get `429` with a `Retry-After`. A fixed delay alone only slows one connection at a time — this caps a parallel guesser.
