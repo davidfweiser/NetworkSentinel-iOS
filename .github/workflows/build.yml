@@ -1,0 +1,51 @@
+
+name: Build
+
+# Nothing else in this repo compiles the Swift, so a change that looks fine in a
+# diff can still be a build break. macOS runners bill at 10x Linux minutes, so
+# this stays deliberately small: one debug simulator build, no tests, no
+# archiving, and doc-only changes skip it entirely.
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md']
+  pull_request:
+    paths-ignore: ['**.md']
+  workflow_dispatch:
+
+# A second push supersedes the first — no point paying for a build of a commit
+# nobody is waiting on any more.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # The UI is built on Liquid Glass against the iOS 26 SDK, so this needs an
+    # image carrying Xcode 26.
+    runs-on: macos-26
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # First thing in the log, because "which Xcode" is the first question
+      # asked of any iOS build failure that reproduces nowhere else.
+      - name: Toolchain
+        run: xcodebuild -version
+
+      # Builds the committed .xcodeproj rather than regenerating it with
+      # XcodeGen. That is the artifact people clone and open, and building it
+      # directly is what catches a project file left stale by a new source file
+      # — regenerating first would hide exactly that mistake.
+      #
+      # -target, not -scheme: no shared scheme is committed (Xcode writes those
+      # on first open), and xcodebuild will not invent one.
+      - name: Build
+        run: |
+          xcodebuild build \
+            -project NetworkSentinel.xcodeproj \
+            -target NetworkSentinel \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
