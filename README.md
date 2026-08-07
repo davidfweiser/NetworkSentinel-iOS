@@ -4,7 +4,7 @@ Native **macOS** desktop app for **live network monitoring**, **remote peer trac
 
 > Awareness / monitoring tooling — not a full IDS/IPS replacement.
 
-macOS port of [davidfweiser/NetworkSentinel](https://github.com/davidfweiser/NetworkSentinel) (Linux Avalonia / original Windows WPF). Platform layers use **`lsof`/`netstat`/`nettop`**, **PF (`pfctl`)** elevated via **osascript** or **sudo**, the **macOS unified log** (`log stream`), and **`~/Library/Application Support/NetworkSentinel`**. Version **0.5.1**.
+macOS port of [davidfweiser/NetworkSentinel](https://github.com/davidfweiser/NetworkSentinel) (Linux Avalonia / original Windows WPF). Platform layers use **`lsof`/`netstat`/`nettop`**, **PF (`pfctl`)** elevated via **osascript** or **sudo**, the **macOS unified log** (`log stream`), and **`~/Library/Application Support/NetworkSentinel`**. Version **0.6.2**.
 
 ---
 
@@ -300,8 +300,8 @@ Self-contained (no system .NET runtime needed):
 `package.sh` produces `dist/networksentinel-<version>-<rid>.tar.gz` plus a ready `dist/Network Sentinel.app` you can drag to Applications. To install from the tarball on a Mac with no .NET:
 
 ```bash
-tar xzf networksentinel-0.5.1-osx-arm64.tar.gz
-cd networksentinel-0.5.1-osx-arm64
+tar xzf networksentinel-0.6.2-osx-arm64.tar.gz
+cd networksentinel-0.6.2-osx-arm64
 sudo ./install.sh                        # /Applications + /usr/local/bin
 ./install.sh --user                      # ~/Applications + ~/.local/bin, no root
 sudo ./install.sh --desktop-shortcut     # also drop a shortcut on the Desktop
@@ -390,7 +390,9 @@ The token is written to `duckdns.json` (mode `0600`), not `settings.json`; the G
 
 **One enforcement engine.** Every automatic block goes through `PreventionService`, whatever raised the threat and whichever frontend is running. The gates run cheapest-first and a threat must clear all of them:
 
-> severity ≥ minimum → not informational-only → routable public IP → not allowlisted → not this machine's own address → not a protected endpoint (WireGuard peers) → not operator-protected → not already blocked → not suppressed by a manual unblock → not attempted in the last 10 minutes
+> severity ≥ minimum → not informational-only → routable public IP → not allowlisted → not this machine's own address → not a protected endpoint (WireGuard peers) → not operator-protected → not already blocked → not suppressed by a manual unblock → not already claimed by a recent attempt
+
+That last gate is not one flat interval. An address is claimed for 10 minutes once a batch acts on it, but a block that fails for a reason *other* than elevation retries after 45 seconds — leaving an actively hammering host alone for ten minutes over one transient `pfctl` error is worse than retrying. An elevation failure is never per-address, so it pauses auto-block **globally** until the backoff expires or you authorize elevation, which lifts it immediately.
 
 This replaced three near-identical copies of the auto-block loop that had drifted: only the web console honoured the manual-unblock suppression list, so the desktop GUI and the TUI would re-block an address you had just deliberately released. Releasing an address by hand now suppresses auto-block for it for 24 hours, in every frontend, and that survives a restart. Blocking it again by hand clears the suppression.
 
