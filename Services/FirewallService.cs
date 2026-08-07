@@ -719,9 +719,17 @@ public sealed class FirewallService
 
             using var p = Process.Start(psi);
             if (p == null) return false;
-            p.StandardOutput.ReadToEnd();
-            p.StandardError.ReadToEnd();
-            p.WaitForExit(4000);
+            // Drain both pipes concurrently — `launchctl print` is verbose enough to
+            // fill a pipe buffer, and a blocking stdout read would deadlock against it
+            // while keeping the WaitForExit bound below from ever engaging.
+            var stdoutTask = p.StandardOutput.ReadToEndAsync();
+            var stderrTask = p.StandardError.ReadToEndAsync();
+            if (!p.WaitForExit(4000))
+            {
+                try { p.Kill(entireProcessTree: true); } catch { /* ignore */ }
+                return false;
+            }
+            try { Task.WaitAll(stdoutTask, stderrTask); } catch { /* pipes torn down */ }
             return p.ExitCode == 0;
         }
         catch
@@ -864,16 +872,20 @@ public sealed class FirewallService
                 .Replace("\\", "\\\\")
                 .Replace("\"", "\\\"");
 
-            var osa = RunProcess(
+            // The admin dialog waits on a human, so it gets the interactive allowance
+            // rather than the 30s one used for non-interactive commands.
+            var osa = RunProcessTimed(
                 "osascript",
+                InteractiveProcessTimeoutMs,
                 "-e",
                 $"do shell script \"{asLiteral}\" with administrator privileges");
             if (osa.Success)
                 return osa;
 
-            // 3) Interactive sudo when we have a TTY (TUI / Terminal)
+            // 3) Interactive sudo when we have a TTY (TUI / Terminal) — also a human
+            //    typing a password, so the same allowance applies.
             if (CommandExists("sudo") && !Console.IsInputRedirected)
-                return RunProcess("sudo", "/bin/bash", "-c", shellScript);
+                return RunProcessTimed("sudo", InteractiveProcessTimeoutMs, "/bin/bash", "-c", shellScript);
 
             return FirewallOperationResult.Fail(
                 string.IsNullOrWhiteSpace(osa.Message)
@@ -907,7 +919,15 @@ public sealed class FirewallService
         }
     }
 
+    private const int DefaultProcessTimeoutMs = 30_000;
+
+    /// <summary>Paths that raise a password dialog include a human typing — allow minutes, not seconds.</summary>
+    private const int InteractiveProcessTimeoutMs = 300_000;
+
     private static FirewallOperationResult RunProcess(string file, params string[] args)
+        => RunProcessTimed(file, DefaultProcessTimeoutMs, args);
+
+    private static FirewallOperationResult RunProcessTimed(string file, int timeoutMs, params string[] args)
     {
         try
         {
@@ -926,14 +946,21 @@ public sealed class FirewallService
             if (p == null)
                 return FirewallOperationResult.Fail($"Could not start {file}.");
 
-            string stdout = p.StandardOutput.ReadToEnd();
-            string stderr = p.StandardError.ReadToEnd();
-            if (!p.WaitForExit(120_000))
+            // Both pipes drained concurrently: reading stdout to EOF before touching
+            // stderr deadlocks when the child fills the stderr buffer first — and the
+            // blocked read meant the WaitForExit timeout below never engaged, so a
+            // hung pfctl/osascript pinned the calling thread indefinitely.
+            var stdoutTask = p.StandardOutput.ReadToEndAsync();
+            var stderrTask = p.StandardError.ReadToEndAsync();
+
+            if (!p.WaitForExit(timeoutMs))
             {
-                try { p.Kill(entireProcessTree: true); } catch { /* ignore */ }
-                return FirewallOperationResult.Fail($"{file} timed out.");
+                try { p.Kill(entireProcessTree: true); } catch { /* already gone */ }
+                return FirewallOperationResult.Fail($"{file} did not finish within {timeoutMs / 1000}s.");
             }
 
+            string stdout = stdoutTask.GetAwaiter().GetResult();
+            string stderr = stderrTask.GetAwaiter().GetResult();
             string combined = (stdout + "\n" + stderr).Trim();
 
             if (p.ExitCode == 0)
