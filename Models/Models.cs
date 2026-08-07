@@ -53,16 +53,38 @@ public sealed class NetworkConnection : INotifyPropertyChanged
     private string _remoteHostName = "";
     private string _geoSummary = "Looking up…";
 
+    private TcpConnectionState _state;
+
     public string Protocol { get; init; } = "TCP";
     public string LocalAddress { get; init; } = "";
     public int LocalPort { get; init; }
     public string RemoteAddress { get; init; } = "";
     public int RemotePort { get; init; }
-    public TcpConnectionState State { get; init; }
-    public int ProcessId { get; init; }
+
+    /// <summary>Mutable: updated in place each poll so the UI shows the current state, not the first-seen one.</summary>
+    public TcpConnectionState State
+    {
+        get => _state;
+        set { if (_state != value) { _state = value; OnPropertyChanged(); OnPropertyChanged(nameof(StateText)); } }
+    }
+
+    /// <summary>
+    /// Mutable: lsof is the PID source, and when a poll falls back to netstat every
+    /// connection comes back with pid 0, so the same socket's PID flips between polls.
+    /// </summary>
+    public int ProcessId { get; set; }
+
     public DateTime FirstSeen { get; init; } = DateTime.Now;
     public DateTime LastSeen { get; set; } = DateTime.Now;
-    public string Key => $"{Protocol}|{LocalAddress}:{LocalPort}|{RemoteAddress}:{RemotePort}|{ProcessId}";
+
+    /// <summary>
+    /// Identity is the 4-tuple + protocol only. The PID was once part of this key, and
+    /// because MacNetTable falls back from lsof to netstat — which reports pid 0 for
+    /// every row — a single fallback poll changed the identity of every connection at
+    /// once: counted twice by the host stats and seen twice by the intrusion
+    /// heuristics, effectively halving their rate thresholds.
+    /// </summary>
+    public string Key => $"{Protocol}|{LocalAddress}:{LocalPort}|{RemoteAddress}:{RemotePort}";
 
     public string ProcessName
     {

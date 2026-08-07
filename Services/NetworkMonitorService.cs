@@ -404,7 +404,15 @@ public sealed class NetworkMonitorService : IDisposable
                 if (_connections.TryGetValue(c.Key, out var existing))
                 {
                     existing.LastSeen = now;
-                    existing.ProcessName = c.ProcessName;
+                    existing.State = c.State;
+                    // Only upgrade process identity — a netstat-fallback poll (pid 0
+                    // for every row) must not downgrade an already-resolved name to
+                    // unknown.
+                    if (c.ProcessId != 0 || existing.ProcessId == 0)
+                    {
+                        existing.ProcessId = c.ProcessId;
+                        existing.ProcessName = c.ProcessName;
+                    }
                     isNewConnection = false;
                 }
                 else

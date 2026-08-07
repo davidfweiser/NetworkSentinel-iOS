@@ -422,7 +422,12 @@ internal static class MacNetTable
         var result = new List<NetworkConnection>(list.Count);
         foreach (var c in list)
         {
-            var key = $"{c.Protocol}|{c.LocalAddress}:{c.LocalPort}|{c.RemoteAddress}:{c.RemotePort}|{c.State}|{c.ProcessId}";
+            // No ProcessId: lsof lists one row per process holding the descriptor, so a
+            // socket shared across a fork appears twice. That is one connection, and
+            // keeping both would double-count it in the host stats and the intrusion
+            // heuristics within a single poll — the same error dropping the PID from
+            // NetworkConnection.Key fixes across polls.
+            var key = $"{c.Protocol}|{c.LocalAddress}:{c.LocalPort}|{c.RemoteAddress}:{c.RemotePort}|{c.State}";
             if (seen.Add(key))
                 result.Add(c);
         }
