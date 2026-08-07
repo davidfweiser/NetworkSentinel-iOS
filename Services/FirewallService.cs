@@ -210,17 +210,23 @@ public sealed class FirewallService
                 siblings.Add(name[..^"-Out".Length] + "-In");
 
             // Drop both from the ledger first, then reload PF once — one password
-            // prompt for the pair instead of one per sibling.
-            var ledger = LoadLedger();
-            var removed = siblings
-                .Where(s => ledger.Any(r => string.Equals(r.Name, s, StringComparison.OrdinalIgnoreCase)))
-                .ToList();
+            // prompt for the pair instead of one per sibling. The gate covers only
+            // load-modify-save, not the privileged reload below: holding it across a
+            // password dialog would stall auto-block for as long as the dialog is up.
+            List<string> removed;
+            lock (LedgerGate)
+            {
+                var ledger = LoadLedger();
+                removed = siblings
+                    .Where(s => ledger.Any(r => string.Equals(r.Name, s, StringComparison.OrdinalIgnoreCase)))
+                    .ToList();
 
-            if (removed.Count == 0)
-                return FirewallOperationResult.Fail($"No rule named “{name}”.");
+                if (removed.Count == 0)
+                    return FirewallOperationResult.Fail($"No rule named “{name}”.");
 
-            ledger.RemoveAll(r => removed.Contains(r.Name, StringComparer.OrdinalIgnoreCase));
-            SaveLedger(ledger);
+                ledger.RemoveAll(r => removed.Contains(r.Name, StringComparer.OrdinalIgnoreCase));
+                SaveLedger(ledger);
+            }
 
             var applied = ApplyPfFromLedger();
             if (!applied.Success)
@@ -243,19 +249,26 @@ public sealed class FirewallService
         if (!IsAdministrator)
             return FirewallOperationResult.Fail("No way to elevate to modify the host firewall.");
 
-        var rules = LoadLedger();
-        var kept = skip == null
-            ? new List<FirewallRuleInfo>()
-            : rules.Where(skip).ToList();
-        var removed = rules.Count - kept.Count;
+        int removed;
+        int keptCount;
+        bool droppedProbeRule;
+        lock (LedgerGate)
+        {
+            var rules = LoadLedger();
+            var kept = skip == null
+                ? new List<FirewallRuleInfo>()
+                : rules.Where(skip).ToList();
+            removed = rules.Count - kept.Count;
+            keptCount = kept.Count;
 
-        // Wiping the ledger also drops the probe-log rule from the anchor, so the
-        // privileged decoder would otherwise keep running with nothing logging to it.
-        var droppedProbeRule =
-            rules.Any(r => string.Equals(r.Name, ProbeLogRuleName, StringComparison.OrdinalIgnoreCase)) &&
-            !kept.Any(r => string.Equals(r.Name, ProbeLogRuleName, StringComparison.OrdinalIgnoreCase));
+            // Wiping the ledger also drops the probe-log rule from the anchor, so the
+            // privileged decoder would otherwise keep running with nothing logging to it.
+            droppedProbeRule =
+                rules.Any(r => string.Equals(r.Name, ProbeLogRuleName, StringComparison.OrdinalIgnoreCase)) &&
+                !kept.Any(r => string.Equals(r.Name, ProbeLogRuleName, StringComparison.OrdinalIgnoreCase));
 
-        SaveLedger(kept);
+            SaveLedger(kept);
+        }
 
         var script = BuildApplyPfScript(out var buildError);
         if (script == null)
@@ -268,8 +281,8 @@ public sealed class FirewallService
             return applied;
 
         var msg = $"Removed {removed} Network Sentinel firewall rule(s).";
-        if (kept.Count > 0)
-            msg += $" Kept {kept.Count}.";
+        if (keptCount > 0)
+            msg += $" Kept {keptCount}.";
         return FirewallOperationResult.Ok(msg);
     }
 
@@ -791,9 +804,122 @@ public sealed class FirewallService
     /// </summary>
     public void StartExpirySweep()
     {
+        if (_expiryTimer == null)
+        {
+            // One-time startup pass, off the caller's thread: the ledger survives a
+            // reboot but the loaded PF rules don't, so reconcile before the first sweep.
+            _ = Task.Run(() => ReconcileLedgerWithKernel());
+        }
         _expiryTimer ??= new Timer(_ => TrySweepExpired(), null,
             TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
     }
+
+    /// <summary>
+    /// Realigns the ledger and the rules actually loaded in PF. firewall-rules.json
+    /// survives a reboot; the loaded anchor does not — macOS boots with PF disabled
+    /// unless something enables it, so after a restart the app reported addresses as
+    /// blocked, and the auto-block "already blocked" gate skipped re-blocking a
+    /// still-active attacker, while no rule existed in the kernel. The same
+    /// divergence appears after an external <c>pfctl -F</c>.
+    ///
+    /// Listing (and repairing) needs elevation, so this only acts when that can
+    /// happen silently — root, or cached/passwordless sudo — and never raises a
+    /// password dialog from startup. When it can't, the ledger is left alone and the
+    /// next process start retries.
+    ///
+    /// Where Linux drops the stale ledger entries, macOS re-applies them: the anchor
+    /// ruleset is generated wholesale from the ledger, so restoring it is one
+    /// <c>pfctl -f</c> with machinery that already exists, and restoring protection
+    /// beats discarding it. Dropping entries is the fallback for when the re-apply
+    /// itself fails, so the "already blocked" gate still can't suppress a real block.
+    /// </summary>
+    public FirewallOperationResult ReconcileLedgerWithKernel()
+    {
+        try
+        {
+            var expected = LoadLedger()
+                .Where(r => r.Enabled && r.IsBlock && !r.IsExpired)
+                .ToList();
+            if (expected.Count == 0)
+                return FirewallOperationResult.Ok("Ledger has no live block rules — nothing to reconcile.");
+
+            if (!CanElevateSilently())
+                return FirewallOperationResult.Fail("Cannot list PF rules without prompting — reconciliation skipped.");
+
+            var listed = RunPrivilegedSilent($"/sbin/pfctl -a {ShellQuote(PfAnchorName)} -s rules 2>&1");
+            // A missing anchor or a disabled PF is the post-reboot case, not an error:
+            // it means nothing is loaded, so every ledger entry is unenforced.
+            var dump = listed.Success && !LooksLikeNothingLoaded(listed.Message)
+                ? listed.Message
+                : "";
+
+            // pfctl -s rules prints normalized rules and drops the "# <name>" comments
+            // BuildPfRuleset writes, so the Linux name-containment test does not work
+            // here. Match on what pfctl does print: the address, or the port.
+            var missing = expected.Where(r => !IsLoaded(r, dump)).ToList();
+            if (missing.Count == 0)
+                return FirewallOperationResult.Ok("PF rules match the ledger.");
+
+            var script = BuildApplyPfScript(out var buildError);
+            if (script != null)
+            {
+                var applied = RunPrivilegedSilent(script);
+                if (applied.Success)
+                    return FirewallOperationResult.Ok(
+                        $"Re-applied {missing.Count} block rule{(missing.Count == 1 ? "" : "s")} that were in the ledger but not loaded in PF.");
+                buildError = applied.Message;
+            }
+
+            // Could not restore them, so stop claiming they are in force: a stale
+            // ledger entry makes auto-block skip an address it should be blocking.
+            lock (LedgerGate)
+            {
+                var ledger = LoadLedger();
+                ledger.RemoveAll(r => missing.Any(m => string.Equals(m.Name, r.Name, StringComparison.OrdinalIgnoreCase)));
+                SaveLedger(ledger);
+            }
+
+            return FirewallOperationResult.Fail(
+                $"Could not re-apply {missing.Count} unloaded rule{(missing.Count == 1 ? "" : "s")} ({buildError}); " +
+                "dropped them from the ledger so auto-block can act on those addresses again.");
+        }
+        catch (Exception ex)
+        {
+            return FirewallOperationResult.Fail($"Reconcile failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>Is this ledger rule visible in a <c>pfctl -s rules</c> dump?</summary>
+    internal static bool IsLoaded(FirewallRuleInfo rule, string dump)
+    {
+        if (dump.Length == 0) return false;
+
+        if (rule.Kind == FirewallRuleKind.IpBlock && !string.IsNullOrWhiteSpace(rule.RemoteAddresses))
+            return dump.Contains(rule.RemoteAddresses.Trim(), StringComparison.OrdinalIgnoreCase);
+
+        if (rule.Kind == FirewallRuleKind.PortBlock && int.TryParse(rule.LocalPorts, out var port))
+            return dump.Contains($"port = {port}", StringComparison.Ordinal)
+                   || dump.Contains($"port {port}", StringComparison.Ordinal);
+
+        // Anything we cannot check is left alone rather than reported as unloaded —
+        // a false "missing" would re-apply or delete a rule for no reason.
+        return true;
+    }
+
+    internal static bool LooksLikeNothingLoaded(string message)
+        => message.Contains("No such file or directory", StringComparison.OrdinalIgnoreCase)
+           || message.Contains("does not exist", StringComparison.OrdinalIgnoreCase)
+           || message.Contains("pf not enabled", StringComparison.OrdinalIgnoreCase)
+           || message.Contains("Operation not supported", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Elevation that can never prompt: root, or sudo -n. Used by the startup and
+    /// timer paths, where a password dialog would appear out of nowhere.
+    /// </summary>
+    private FirewallOperationResult RunPrivilegedSilent(string shellScript)
+        => IsRoot
+            ? RunProcess("/bin/bash", "-c", shellScript)
+            : RunProcess("sudo", "-n", "/bin/bash", "-c", shellScript);
 
     private void TrySweepExpired()
     {
@@ -830,9 +956,12 @@ public sealed class FirewallService
 
     private static void PruneExpiredFromLedger()
     {
-        var ledger = LoadLedger();
-        if (ledger.RemoveAll(r => r.IsExpired) > 0)
-            SaveLedger(ledger);
+        lock (LedgerGate)
+        {
+            var ledger = LoadLedger();
+            if (ledger.RemoveAll(r => r.IsExpired) > 0)
+                SaveLedger(ledger);
+        }
     }
 
     // ── Elevation ────────────────────────────────────────────────────────
@@ -1016,19 +1145,36 @@ public sealed class FirewallService
         }
     }
 
+    /// <summary>
+    /// Serialises load-modify-save of the ledger. WriteAtomic makes each write
+    /// all-or-nothing, but not the read-modify-write around it: the ledger has three
+    /// writers (the expiry sweep, startup reconciliation, and auto-block), and two
+    /// interleaving reads both saved their own stale snapshot — erasing a block
+    /// recorded meanwhile and orphaning its PF rule, invisible to the UI and to the
+    /// sweep. Process-wide only: a desktop app and a launchd web console sharing one
+    /// data directory can still lose an update to each other, which needs flock.
+    /// </summary>
+    private static readonly object LedgerGate = new();
+
     private static void UpsertLedger(FirewallRuleInfo rule)
     {
-        var list = LoadLedger();
-        list.RemoveAll(r => string.Equals(r.Name, rule.Name, StringComparison.OrdinalIgnoreCase));
-        list.Add(rule);
-        SaveLedger(list);
+        lock (LedgerGate)
+        {
+            var list = LoadLedger();
+            list.RemoveAll(r => string.Equals(r.Name, rule.Name, StringComparison.OrdinalIgnoreCase));
+            list.Add(rule);
+            SaveLedger(list);
+        }
     }
 
     private static void RemoveFromLedger(string name)
     {
-        var list = LoadLedger();
-        list.RemoveAll(r => string.Equals(r.Name, name, StringComparison.OrdinalIgnoreCase));
-        SaveLedger(list);
+        lock (LedgerGate)
+        {
+            var list = LoadLedger();
+            list.RemoveAll(r => string.Equals(r.Name, name, StringComparison.OrdinalIgnoreCase));
+            SaveLedger(list);
+        }
     }
 
     public static string IpRuleName(string ip, bool inbound)

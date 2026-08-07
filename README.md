@@ -332,6 +332,8 @@ The token is written to `duckdns.json` (mode `0600`), not `settings.json`; the G
 
 **What auto-block will never touch.** LAN, loopback, link-local, multicast/broadcast, and **CGNAT (100.64.0.0/10** — where Tailscale and many VPN tunnel subnets live**)**. Blocking a CGNAT address would only ever cut off a tunnel peer, so it is not something a heuristic should decide.
 
+**Startup reconciliation.** `firewall-rules.json` survives a reboot; the rules loaded into PF do not — macOS boots with PF disabled unless something enables it. Without a check, the app would report addresses as blocked and auto-block would skip re-blocking a still-active attacker, while nothing was actually in force. At startup Network Sentinel lists the anchor's live rules and, if any ledger entry is missing, re-applies the generated ruleset. If the re-apply fails it drops those entries instead, so auto-block stops believing they are covered. This only runs when elevation is silent (root, or cached/passwordless `sudo`) — startup never raises a password dialog. Otherwise it is skipped and retried on the next start.
+
 A **manual** block of a CGNAT address is still allowed, behind a confirmation naming what it costs — a hostile tailnet peer brute-forcing SSH is a real case, and refusing it in the manual path too would leave you with no way to stop the attack from inside the app. Addresses that would cut this Mac off from its own network (LAN, loopback, link-local, multicast) stay refused everywhere.
 
 ---
