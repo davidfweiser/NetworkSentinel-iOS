@@ -81,6 +81,25 @@ public sealed class AppSettings
     /// </summary>
     public int WireGuardPeerMbPer10Min { get; set; }
 
+    /// <summary>
+    /// Read PF's state table for flow events — the only view of UDP traffic and of
+    /// traffic this Mac forwards. Needs PF enabled and root, so off by default.
+    /// </summary>
+    public bool FlowEventsEnabled { get; set; }
+
+    /// <summary>
+    /// Watch DNS hygiene: plaintext egress, encrypted DNS falling back, unapproved
+    /// resolvers, VPN clients bypassing the resolver, allowlist poisoning. Needs flow
+    /// events, so it needs PF enabled and root.
+    /// </summary>
+    public bool DnsHygieneEnabled { get; set; }
+
+    /// <summary>
+    /// Resolvers this host is meant to use, comma separated. Also what identifies a DoH
+    /// endpoint on 443 — without it a DoH setup looks like no DNS at all rather than a leak.
+    /// </summary>
+    public string DnsApprovedResolvers { get; set; } = "";
+
     /// <summary>Check remote IPs against public threat-intel blocklists (FireHOL level1, Spamhaus DROP).</summary>
     public bool ThreatIntelEnabled { get; set; } = true;
 

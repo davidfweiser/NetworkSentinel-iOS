@@ -72,6 +72,36 @@ Enable **Settings → Intrusion detection → WireGuard peer watch**. `wg` is re
 
 **A peer's public endpoint is protected from auto-block.** That endpoint is where the client's encrypted packets come from, so blocking it kills that client's VPN — and a peer alert (or any other detector tripping on peer traffic) would otherwise nominate exactly that address. Manual blocking is deliberately unaffected.
 
+### DNS hygiene (0.6.x)
+
+Almost nothing connects without resolving a name first, so DNS is where a compromise usually shows earliest — and it is an exfiltration channel the exfiltration monitor cannot see, because that counts TCP socket bytes and DNS is UDP.
+
+It also closes a hole in this app's own defences. The allowlist resolves its domains over whatever DNS this Mac is using, and auto-block never touches a resolved allowlist address. Poison the resolver and an attacker's address is written into the never-block list under a trusted domain's name. Each answer is therefore compared against the networks that domain has resolved into before (/24 for IPv4, /48 for IPv6), and only a move that shares nothing with that history alerts — so CDN rotation stays quiet. That history persists, because a restart that silently re-seeded would adopt a poisoned answer as the new truth.
+
+| Detection | Level |
+|---|---|
+| Plaintext DNS leaving this Mac | Medium |
+| Encrypted DNS silently falling back to plaintext | High |
+| Queries to a resolver you did not approve | High |
+| A VPN client bypassing this host's resolver | Medium |
+| An allowlisted domain resolving into an unfamiliar network | High |
+
+The fallback case is the one nobody catches: resolvers usually degrade to plaintext rather than fail, so a blocked port 853 or an expired certificate quietly removes the protection you configured.
+
+**Limits are explicit.** Port 53 is plaintext and detected anywhere. 853 is DoT. DoH is HTTPS on 443 and indistinguishable from the web, so it only counts as encrypted when the destination is a resolver you listed under **Approved resolvers** — without that list a DoH setup looks like *no DNS at all* rather than a leak. Queries to a resolver running **on this Mac** are never flagged: local-resolver-with-encrypted-upstream is the arrangement that keeps queries visible here while hiding them from the network. A query to your *router* is not exempt — it genuinely leaves the machine in the clear, onto a segment anything can read.
+
+#### PF flow events
+
+DNS hygiene is fed by PF's state table, not the socket tables. `lsof` and `netstat` only show sockets this Mac owns, and for UDP they show almost nothing — a DNS query is a send on an unconnected socket that is gone before the next poll. PF tracks state for UDP as well as TCP, and for traffic this Mac merely forwards, so it sees flows no socket table will.
+
+This is where macOS differs from the Linux build, which subscribes to conntrack netlink and receives a kernel event per flow:
+
+- **It polls** (once a second) and diffs successive `pfctl -s state` dumps. A flow that opens *and* closes inside one interval is never seen. Repeated queries to the same resolver — what every check above keys on — are seen reliably.
+- **PF must be enabled.** macOS boots with PF off unless something turns it on; blocking any address enables it, or `sudo pfctl -e`.
+- **It needs root**, and unlike a netlink subscription the privilege is spent *per poll*, so it only runs when elevation is silent (root, or passwordless/cached `sudo` for `pfctl`). It never raises a password dialog — a monitor that prompts once a second is worse than one that is off. The status line says which of these is missing.
+
+The app still does not configure your resolver. Installing a local forwarder and pointing it upstream over DoT is a one-time job whose failure mode takes out name resolution for this Mac and every tunnel client at once — a different kind of tool from a monitor.
+
 ### Remote alerting (webhook)
 Set **Settings → Webhook URL** to push Critical threats off the machine — the payload adapts automatically: **ntfy** (plain text + `Title`/`Priority` headers), **Slack** (`{"text": …}`), **Discord** (`{"content": …}`), anything else gets a generic JSON document. Per-source/type cooldown stops a burst from flooding the channel.
 

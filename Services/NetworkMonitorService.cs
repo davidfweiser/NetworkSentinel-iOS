@@ -16,6 +16,8 @@ public sealed class NetworkMonitorService : IDisposable
     private readonly HoneypotService _honeypot = new();
     private readonly SuricataService _suricata = new();
     private readonly WireGuardMonitor _wireGuard = new();
+    private readonly DnsHygieneMonitor _dns = new();
+    private readonly PfFlowEventSource _flows = new();
     private readonly ArpWatchService _arpWatch = new();
     private readonly LaunchPersistenceWatcher _launchWatch = new();
     private readonly ExfiltrationMonitor _exfil = new();
@@ -71,6 +73,16 @@ public sealed class NetworkMonitorService : IDisposable
 
         Stats.ThreatsToday = _threatsTodayCount;
         Stats.HighThreats = _highThreatCount;
+
+        // Wired at construction, not in Start(): the property setters call the sources'
+        // Start() directly for runtime toggles, so wiring only from Start() left a
+        // feature switched on mid-session running with no handler attached — flows went
+        // to nobody, and DNS hygiene couldn't tell tunnel-client queries from this
+        // host's own.
+        _flows.FlowCreated += OnFlowCreated;
+        // Peer allowed-IPs tell the DNS monitor whether a query came from a tunnel
+        // client, which is what separates a client leak from this host's own traffic.
+        _dns.IsVpnClientAddress = IsWireGuardClientAddress;
     }
 
     /// <summary>Enables/disables the external geo-IP web lookup (reverse DNS still runs).</summary>
@@ -237,6 +249,75 @@ public sealed class NetworkMonitorService : IDisposable
         }
     }
 
+    private bool _flowEventsEnabled;
+
+    /// <summary>
+    /// Read PF's state table for flow events. This is the only view of UDP traffic and
+    /// of traffic this machine merely forwards, which is what DNS hygiene is built on.
+    /// Needs PF enabled and root; degrades with an explanatory status when it can't.
+    /// </summary>
+    public bool FlowEventsEnabled
+    {
+        get => _flowEventsEnabled;
+        set
+        {
+            if (_flowEventsEnabled == value) return;
+            _flowEventsEnabled = value;
+            if (Stats.IsMonitoring)
+            {
+                if (value) _flows.Start();
+                else _flows.Stop();
+            }
+        }
+    }
+
+    public string FlowEventsStatus => _flows.Status;
+
+    /// <summary>True when the PF state table is actually being read.</summary>
+    public bool FlowEventsActive => _flows.IsActive;
+
+    private bool _dnsHygieneEnabled;
+
+    /// <summary>
+    /// Watch how this machine resolves names: plaintext egress, encrypted DNS silently
+    /// falling back, queries to unapproved resolvers, VPN clients bypassing the resolver,
+    /// and allowlisted domains being poisoned. Driven by PF flow events, so it needs PF
+    /// enabled and root.
+    /// </summary>
+    public bool DnsHygieneEnabled
+    {
+        get => _dnsHygieneEnabled;
+        set
+        {
+            if (_dnsHygieneEnabled == value) return;
+            _dnsHygieneEnabled = value;
+            if (Stats.IsMonitoring)
+            {
+                if (value) _dns.Start();
+                else _dns.Stop();
+            }
+        }
+    }
+
+    /// <summary>Resolvers this host is meant to use, comma separated. Also identifies DoH endpoints on 443.</summary>
+    public string DnsApprovedResolvers
+    {
+        get => _dns.ApprovedResolvers;
+        set => _dns.ApprovedResolvers = value;
+    }
+
+    public string DnsHygieneStatus => _dns.Status;
+
+    /// <summary>Plaintext vs. encrypted DNS flows observed.</summary>
+    public (long Plaintext, long Encrypted) DnsCounters => _dns.Counters;
+
+    /// <summary>
+    /// Lets the allowlist report each resolution to the DNS monitor. SentinelCore wires
+    /// this to its AllowlistService instance.
+    /// </summary>
+    public Action<string, IReadOnlyCollection<string>> AllowlistResolutionObserver
+        => (domain, ips) => _dns.ObserveAllowlistResolution(domain, ips, DateTime.Now);
+
     private bool _wireGuardEnabled;
 
     /// <summary>
@@ -325,6 +406,8 @@ public sealed class NetworkMonitorService : IDisposable
             {
                 _suricata.Stop();
         _wireGuard.Stop();
+        _dns.Stop();
+        _flows.Stop();
                 _suricata.Start();
             }
         }
@@ -409,6 +492,8 @@ public sealed class NetworkMonitorService : IDisposable
         if (_honeypotEnabled) _honeypot.Start(_honeypotPorts);
         if (_suricataEnabled) _suricata.Start();
         if (_wireGuardEnabled) _wireGuard.Start();
+        if (_dnsHygieneEnabled) _dns.Start();
+        if (_flowEventsEnabled) _flows.Start();
         _loop = Task.Run(() => RunAsync(_cts.Token));
     }
 
@@ -574,6 +659,9 @@ public sealed class NetworkMonitorService : IDisposable
             if (_suricataEnabled)
                 newThreats.AddRange(_suricata.DrainPending());
             newThreats.AddRange(_wireGuard.DrainPending());
+
+            if (_dnsHygieneEnabled)
+                newThreats.AddRange(_dns.DrainPending());
             newThreats.AddRange(_arpWatch.DrainPending());
             newThreats.AddRange(_launchWatch.DrainPending());
             newThreats.AddRange(_exfil.DrainPending());
@@ -937,9 +1025,70 @@ public sealed class NetworkMonitorService : IDisposable
         _honeypot.Dispose();
         _suricata.Dispose();
         _wireGuard.Dispose();
+        _dns.Dispose();
+        _flows.Dispose();
         _intel.Dispose();
         _webhook.Dispose();
         _history.Save();
         _geo.Dispose();
+    }
+    /// <summary>
+    /// Every new PF flow. Only the DNS monitor consumes these: unlike Linux's conntrack
+    /// netlink source, this one polls, so it cannot deliver the "wake the poll loop the
+    /// instant a flow appears" latency win that justified that wiring there.
+    /// </summary>
+    private void OnFlowCreated(NetworkFlow flow)
+    {
+        if (!_dnsHygieneEnabled)
+            return;
+
+        try { _dns.ObserveFlow(flow, DateTime.Now); }
+        catch { /* a watcher must never break the flow reader */ }
+    }
+
+    /// <summary>
+    /// True when the address falls inside some WireGuard peer's AllowedIPs — i.e. the
+    /// traffic came out of the tunnel rather than from this host.
+    /// </summary>
+    private bool IsWireGuardClientAddress(string ip)
+    {
+        if (string.IsNullOrEmpty(ip) || !System.Net.IPAddress.TryParse(ip, out var address))
+            return false;
+
+        foreach (var peer in _wireGuard.Peers)
+        {
+            foreach (var cidr in peer.AllowedIps.Split(',', StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (CidrContains(cidr.Trim(), address))
+                    return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>Prefix-length containment test for an AllowedIPs entry like "10.8.0.0/24".</summary>
+    private static bool CidrContains(string cidr, System.Net.IPAddress address)
+    {
+        var slash = cidr.IndexOf('/');
+        if (slash <= 0) return false;
+        if (!System.Net.IPAddress.TryParse(cidr[..slash], out var network)) return false;
+        if (!int.TryParse(cidr[(slash + 1)..], out var bits)) return false;
+        if (network.AddressFamily != address.AddressFamily) return false;
+
+        var netBytes = network.GetAddressBytes();
+        var addrBytes = address.GetAddressBytes();
+        if (bits < 0 || bits > netBytes.Length * 8) return false;
+
+        var whole = bits / 8;
+        for (var i = 0; i < whole; i++)
+        {
+            if (netBytes[i] != addrBytes[i]) return false;
+        }
+
+        var remainder = bits % 8;
+        if (remainder == 0) return true;
+
+        var mask = (byte)(0xFF << (8 - remainder));
+        return (netBytes[whole] & mask) == (addrBytes[whole] & mask);
     }
 }

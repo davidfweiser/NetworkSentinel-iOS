@@ -55,11 +55,17 @@ public sealed class SentinelCore : IDisposable
         Monitor.SuricataEnabled = Settings.SuricataEnabled;
         Monitor.WireGuardPeerMbPer10Min = Settings.WireGuardPeerMbPer10Min;
         Monitor.WireGuardMonitorEnabled = Settings.WireGuardMonitorEnabled;
+        Monitor.DnsApprovedResolvers = Settings.DnsApprovedResolvers;
+        Monitor.DnsHygieneEnabled = Settings.DnsHygieneEnabled;
+        // DNS hygiene is fed by the flow source, so switching it on implies flow events.
+        Monitor.FlowEventsEnabled = Settings.FlowEventsEnabled || Settings.DnsHygieneEnabled;
         Monitor.WebhookUrl = Settings.WebhookUrl;
         Monitor.WebhookMinLevel = Settings.GetWebhookMinLevel();
         Monitor.IsIpAllowlisted = ip => Allowlist.IsAllowed(ip, out _);
         // A WireGuard peer's public endpoint must never be auto-blocked — that kills the tunnel.
         Prevention.IsProtectedAddress = Monitor.IsWireGuardPeerEndpoint;
+        // Lets the DNS monitor see every allowlist answer and catch poisoning of the never-block list.
+        Allowlist.ResolutionObserver = Monitor.AllowlistResolutionObserver;
 
         // Root can re-install the probe-log rule silently; unprivileged runs wait
         // for the user to authorize elevation instead of failing at startup.

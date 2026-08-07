@@ -901,6 +901,23 @@ public sealed class WebApp : IDisposable
                             _settings.AutoBlockEnabled = on;
                             label = on ? $"Auto-block ON (≥ {_autoBlockMinLevel})" : "Auto-block OFF";
                             break;
+                        case "flowEventsEnabled":
+                            _monitor.FlowEventsEnabled = on;
+                            _settings.FlowEventsEnabled = on;
+                            label = on ? $"PF flow events: on ({_monitor.FlowEventsStatus})" : "PF flow events: off";
+                            break;
+                        case "dnsHygieneEnabled":
+                            _settings.DnsHygieneEnabled = on;
+                            _monitor.DnsHygieneEnabled = on;
+                            // DNS hygiene has no input without the flow source, so turning
+                            // it on turns that on too rather than looking silently broken.
+                            if (on && !_settings.FlowEventsEnabled)
+                            {
+                                _settings.FlowEventsEnabled = true;
+                                _monitor.FlowEventsEnabled = true;
+                            }
+                            label = on ? $"DNS hygiene: on ({_monitor.DnsHygieneStatus})" : "DNS hygiene: off";
+                            break;
                         case "wireGuardMonitorEnabled":
                             _monitor.WireGuardMonitorEnabled = on;
                             _settings.WireGuardMonitorEnabled = on;
@@ -1012,6 +1029,15 @@ public sealed class WebApp : IDisposable
                             label = _settings.SuricataEnabled
                                 ? _monitor.SuricataStatus
                                 : $"Suricata EVE path saved ({path}) — enable ingestion to read it.";
+                            break;
+                        }
+                        case "dnsApprovedResolvers":
+                        {
+                            _settings.DnsApprovedResolvers = raw;
+                            _monitor.DnsApprovedResolvers = raw;
+                            label = string.IsNullOrWhiteSpace(raw)
+                                ? "Approved resolver list cleared — DoH endpoints can no longer be recognised."
+                                : $"Approved resolvers: {raw}";
                             break;
                         }
                         case "wireGuardPeerMbPer10Min":
@@ -1439,6 +1465,11 @@ public sealed class WebApp : IDisposable
                 wireGuardMonitorEnabled = _settings.WireGuardMonitorEnabled,
                 wireGuardPeerMbPer10Min = _settings.WireGuardPeerMbPer10Min,
                 wireGuardStatus = _monitor.WireGuardStatus,
+                flowEventsEnabled = _settings.FlowEventsEnabled,
+                flowEventsStatus = _monitor.FlowEventsStatus,
+                dnsHygieneEnabled = _settings.DnsHygieneEnabled,
+                dnsApprovedResolvers = _settings.DnsApprovedResolvers,
+                dnsHygieneStatus = _monitor.DnsHygieneStatus,
                 webhookUrl = _settings.WebhookUrl,
                 webhookStatus = _monitor.WebhookStatus,
                 autoBlockExpiryMinutes = _settings.AutoBlockExpiryMinutes,
@@ -2784,6 +2815,9 @@ public sealed class WebApp : IDisposable
         ${row('Suricata ignored SIDs', 'Comma-separated signature IDs to drop entirely — the per-rule mute for a known false positive.', txt('suricataIgnoredSids', s.suricataIgnoredSids || '', '2001219,2010935'))}
         ${row('WireGuard peer watch', 'Track WireGuard peers via `wg show` — new peers, handshakes going stale, and per-peer transfer volume. WireGuard\'s unconnected UDP socket is never a tracked connection, so on a VPN server this is the only view of who is attached. Needs root and wireguard-tools. ' + (s.wireGuardStatus || ''), sw('wireGuardMonitorEnabled', s.wireGuardMonitorEnabled))}
         ${row('Per-peer transfer alert (MB / 10 min)', 'Megabytes sent to one peer within 10 minutes before alerting. 0 turns per-peer volume alerts off.', txt('wireGuardPeerMbPer10Min', s.wireGuardPeerMbPer10Min ?? 0, '0'))}
+        ${row('PF flow events', 'Read PF\'s state table for flow events — the only view of UDP traffic and of traffic this Mac forwards. Needs PF enabled (`pfctl -e`) and root. ' + (s.flowEventsStatus || ''), sw('flowEventsEnabled', s.flowEventsEnabled))}
+        ${row('DNS hygiene', 'Watch how this Mac resolves names: plaintext DNS leaving the machine, encrypted DNS silently falling back to plaintext, queries to resolvers you did not approve, VPN clients bypassing the resolver, and allowlisted domains being poisoned. Needs PF flow events. ' + (s.dnsHygieneStatus || ''), sw('dnsHygieneEnabled', s.dnsHygieneEnabled))}
+        ${row('Approved resolvers', 'Comma-separated resolver addresses this Mac is meant to use. Also what identifies a DoH endpoint on port 443 — without this list a DoH setup looks like no DNS at all rather than a leak.', txt('dnsApprovedResolvers', s.dnsApprovedResolvers || '', '1.1.1.1, 9.9.9.9'))}
       </div>
       <div class="settings-group"><h3>Alerting</h3>
         ${row('Webhook URL', 'POST Critical threats to a webhook — ntfy, Slack, and Discord formats are detected automatically; anything else gets generic JSON. Empty = off. ' + (s.webhookStatus && s.webhookUrl ? s.webhookStatus : ''), txt('webhookUrl', s.webhookUrl || '', 'https://ntfy.sh/your-topic'))}
