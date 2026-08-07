@@ -49,6 +49,10 @@ public sealed class SentinelCore : IDisposable
         Monitor.ExfilThresholdMb = Settings.ExfilMbPer10Min;
         Monitor.HoneypotPorts = HoneypotService.ParsePorts(Settings.HoneypotPorts);
         Monitor.HoneypotEnabled = Settings.HoneypotEnabled;
+        Monitor.SuricataEvePath = Settings.SuricataEvePath;
+        Monitor.SuricataMaxSeverity = Settings.SuricataMaxSeverity;
+        Monitor.SuricataIgnoredSids = Settings.SuricataIgnoredSids;
+        Monitor.SuricataEnabled = Settings.SuricataEnabled;
         Monitor.WebhookUrl = Settings.WebhookUrl;
         Monitor.WebhookMinLevel = Settings.GetWebhookMinLevel();
         Monitor.IsIpAllowlisted = ip => Allowlist.IsAllowed(ip, out _);

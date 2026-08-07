@@ -44,6 +44,20 @@ Heuristics flag patterns such as:
 
 Each alert includes **source IP**, **method**, and **where it’s coming from** (DNS + best-effort geo). Threat events and the host/listener baseline **persist across restarts** (`threat-log.jsonl`, `host-history.json`).
 
+### Suricata signatures (0.6.x)
+
+Network Sentinel watches *behaviour* — rates, sequences, byte volumes. It does not inspect payloads, so it cannot recognise a specific exploit or a known C2 protocol. Suricata does exactly that, and this ingests its **EVE JSON** alerts as threat events so a signature match feeds the same threat list, the same webhook, and the same auto-block gates as everything else.
+
+```bash
+brew install suricata          # the console only reads the log; it never runs Suricata
+```
+
+Then enable **Settings → Intrusion detection → Suricata alerts**. The EVE path defaults to the Homebrew location for this Mac (`/opt/homebrew/...` on Apple Silicon, `/usr/local/...` on Intel); override it if yours differs. **Max severity** filters by Suricata's own rating — it counts *down*, so 1 is most severe and the default 3 keeps informational noise out. **Ignored SIDs** mutes individual signatures that false-positive on your traffic.
+
+Which end of the flow is the threat matters here: Suricata's `src_ip` is the packet source, which for an outbound C2 callback is *this machine*. Auto-blocking that would firewall the Mac off from itself, so the remote end is whichever side is not local — and "local" includes this host's own interface addresses, not just private ranges.
+
+Reading `eve.json` usually needs root or a mode change; the status line says so when it can't.
+
 ### Remote alerting (webhook)
 Set **Settings → Webhook URL** to push Critical threats off the machine — the payload adapts automatically: **ntfy** (plain text + `Title`/`Priority` headers), **Slack** (`{"text": …}`), **Discord** (`{"content": …}`), anything else gets a generic JSON document. Per-source/type cooldown stops a burst from flooding the channel.
 

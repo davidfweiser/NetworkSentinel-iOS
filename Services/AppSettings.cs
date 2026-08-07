@@ -57,6 +57,18 @@ public sealed class AppSettings
     /// </summary>
     public bool PreventionDryRun { get; set; }
 
+    /// <summary>Ingest Suricata's EVE JSON alerts as threat events (payload inspection / signatures).</summary>
+    public bool SuricataEnabled { get; set; }
+
+    /// <summary>Path to Suricata's EVE JSON log.</summary>
+    public string SuricataEvePath { get; set; } = SuricataService.DefaultEvePath;
+
+    /// <summary>Highest Suricata severity number to accept — Suricata counts down, so 1 is most severe.</summary>
+    public int SuricataMaxSeverity { get; set; } = 3;
+
+    /// <summary>Comma-separated Suricata signature IDs to ignore (per-rule mute for false positives).</summary>
+    public string SuricataIgnoredSids { get; set; } = "";
+
     /// <summary>Check remote IPs against public threat-intel blocklists (FireHOL level1, Spamhaus DROP).</summary>
     public bool ThreatIntelEnabled { get; set; } = true;
 

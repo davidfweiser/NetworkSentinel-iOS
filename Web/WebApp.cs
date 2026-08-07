@@ -901,6 +901,11 @@ public sealed class WebApp : IDisposable
                             _settings.AutoBlockEnabled = on;
                             label = on ? $"Auto-block ON (≥ {_autoBlockMinLevel})" : "Auto-block OFF";
                             break;
+                        case "suricataEnabled":
+                            _monitor.SuricataEnabled = on;
+                            _settings.SuricataEnabled = on;
+                            label = on ? $"Suricata ingestion: on ({_monitor.SuricataStatus})" : "Suricata ingestion: off";
+                            break;
                         case "preventionDryRun":
                             _prevention.DryRun = on;
                             _settings.PreventionDryRun = on;
@@ -994,6 +999,34 @@ public sealed class WebApp : IDisposable
                             _settings.HoneypotEnabled = on;
                             label = on ? _monitor.HoneypotStatus : "Honeypot: off";
                             break;
+                        case "suricataEvePath":
+                        {
+                            var path = string.IsNullOrWhiteSpace(raw) ? SuricataService.DefaultEvePath : raw;
+                            _settings.SuricataEvePath = path;
+                            _monitor.SuricataEvePath = path;
+                            label = _settings.SuricataEnabled
+                                ? _monitor.SuricataStatus
+                                : $"Suricata EVE path saved ({path}) — enable ingestion to read it.";
+                            break;
+                        }
+                        case "suricataMaxSeverity":
+                        {
+                            if (!int.TryParse(raw, out var sev) || sev is < 1 or > 4)
+                                return ActionResultDto.Fail("Suricata severity must be 1-4 (Suricata counts down, so 1 is most severe).");
+                            _settings.SuricataMaxSeverity = sev;
+                            _monitor.SuricataMaxSeverity = sev;
+                            label = $"Suricata max severity: {sev}";
+                            break;
+                        }
+                        case "suricataIgnoredSids":
+                        {
+                            _settings.SuricataIgnoredSids = raw;
+                            _monitor.SuricataIgnoredSids = raw;
+                            label = string.IsNullOrWhiteSpace(raw)
+                                ? "Suricata SID mute list cleared."
+                                : $"Suricata SIDs ignored: {string.Join(",", SuricataService.ParseSids(raw))}";
+                            break;
+                        }
                         case "honeypotPorts":
                         {
                             var ports = HoneypotService.ParsePorts(raw);
@@ -1382,6 +1415,11 @@ public sealed class WebApp : IDisposable
                 honeypotEnabled = _settings.HoneypotEnabled,
                 honeypotPorts = _settings.HoneypotPorts,
                 honeypotStatus = _monitor.HoneypotStatus,
+                suricataEnabled = _settings.SuricataEnabled,
+                suricataEvePath = _settings.SuricataEvePath,
+                suricataMaxSeverity = _settings.SuricataMaxSeverity,
+                suricataIgnoredSids = _settings.SuricataIgnoredSids,
+                suricataStatus = _monitor.SuricataStatus,
                 webhookUrl = _settings.WebhookUrl,
                 webhookStatus = _monitor.WebhookStatus,
                 autoBlockExpiryMinutes = _settings.AutoBlockExpiryMinutes,
@@ -2721,6 +2759,10 @@ public sealed class WebApp : IDisposable
         ${row('Exfiltration threshold (MB / 10 min)', 'Outbound megabytes to a single host before the alert fires.', txt('exfilMbPer10Min', s.exfilMbPer10Min ?? 250, '250'))}
         ${row('Honeypot decoy ports', 'Listen on decoy TCP ports nothing legitimate uses — any completed connection is a zero-false-positive Critical alert. ' + (s.honeypotStatus || ''), sw('honeypotEnabled', s.honeypotEnabled))}
         ${row('Decoy port list', 'Comma-separated TCP ports to bind as decoys. Ports already in use are skipped.', txt('honeypotPorts', s.honeypotPorts || '', '2323,3389,5900'))}
+        ${row('Suricata alerts', 'Ingest Suricata\'s EVE JSON as threat events — signature and payload inspection this app cannot do itself. Install with `brew install suricata`; the console only reads the log. ' + (s.suricataStatus || ''), sw('suricataEnabled', s.suricataEnabled))}
+        ${row('Suricata EVE log path', 'Full path to eve.json. Defaults to the Homebrew location for this Mac.', txt('suricataEvePath', s.suricataEvePath || '', '/opt/homebrew/var/log/suricata/eve.json'))}
+        ${row('Suricata max severity', 'Highest severity number to accept. Suricata counts down, so 1 is most severe and 3 keeps informational noise out.', txt('suricataMaxSeverity', s.suricataMaxSeverity ?? 3, '3'))}
+        ${row('Suricata ignored SIDs', 'Comma-separated signature IDs to drop entirely — the per-rule mute for a known false positive.', txt('suricataIgnoredSids', s.suricataIgnoredSids || '', '2001219,2010935'))}
       </div>
       <div class="settings-group"><h3>Alerting</h3>
         ${row('Webhook URL', 'POST Critical threats to a webhook — ntfy, Slack, and Discord formats are detected automatically; anything else gets generic JSON. Empty = off. ' + (s.webhookStatus && s.webhookUrl ? s.webhookStatus : ''), txt('webhookUrl', s.webhookUrl || '', 'https://ntfy.sh/your-topic'))}

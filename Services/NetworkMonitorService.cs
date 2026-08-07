@@ -14,6 +14,7 @@ public sealed class NetworkMonitorService : IDisposable
     private readonly ProcessReputationService _procRep = new();
     private readonly ThreatIntelService _intel = new();
     private readonly HoneypotService _honeypot = new();
+    private readonly SuricataService _suricata = new();
     private readonly ArpWatchService _arpWatch = new();
     private readonly LaunchPersistenceWatcher _launchWatch = new();
     private readonly ExfiltrationMonitor _exfil = new();
@@ -235,6 +236,60 @@ public sealed class NetworkMonitorService : IDisposable
         }
     }
 
+    private bool _suricataEnabled;
+
+    /// <summary>Ingest Suricata EVE JSON alerts (signature / payload inspection).</summary>
+    public bool SuricataEnabled
+    {
+        get => _suricataEnabled;
+        set
+        {
+            if (_suricataEnabled == value) return;
+            _suricataEnabled = value;
+            if (Stats.IsMonitoring)
+            {
+                if (value) _suricata.Start();
+                else _suricata.Stop();
+            }
+        }
+    }
+
+    /// <summary>Path to Suricata's EVE JSON log (applied on next start).</summary>
+    public string SuricataEvePath
+    {
+        get => _suricata.EvePath;
+        set
+        {
+            var path = string.IsNullOrWhiteSpace(value) ? SuricataService.DefaultEvePath : value.Trim();
+            if (_suricata.EvePath == path) return;
+            _suricata.EvePath = path;
+            if (Stats.IsMonitoring && _suricataEnabled)
+            {
+                _suricata.Stop();
+                _suricata.Start();
+            }
+        }
+    }
+
+    /// <summary>Highest Suricata severity number to accept (Suricata counts down: 1 is most severe).</summary>
+    public int SuricataMaxSeverity
+    {
+        get => _suricata.MaxSeverity;
+        set => _suricata.MaxSeverity = Math.Clamp(value, 1, 4);
+    }
+
+    /// <summary>Suricata signature IDs to ignore (comma separated).</summary>
+    public string SuricataIgnoredSids
+    {
+        get => string.Join(",", _suricata.IgnoredSids);
+        set => _suricata.IgnoredSids = SuricataService.ParseSids(value);
+    }
+
+    public string SuricataStatus => _suricata.Status;
+
+    /// <summary>Alerts read vs. accepted, so the console can show the feed is alive.</summary>
+    public (long Seen, long Accepted) SuricataCounters => _suricata.Counters;
+
     /// <summary>Decoy ports to bind (applied on next honeypot start).</summary>
     public IReadOnlyList<int> HoneypotPorts
     {
@@ -293,6 +348,7 @@ public sealed class NetworkMonitorService : IDisposable
         if (_launchWatchEnabled) _launchWatch.Start();
         if (_exfilEnabled) _exfil.Start();
         if (_honeypotEnabled) _honeypot.Start(_honeypotPorts);
+        if (_suricataEnabled) _suricata.Start();
         _loop = Task.Run(() => RunAsync(_cts.Token));
     }
 
@@ -311,6 +367,7 @@ public sealed class NetworkMonitorService : IDisposable
         _launchWatch.Stop();
         _exfil.Stop();
         _honeypot.Stop();
+        _suricata.Stop();
         _history.Save();
         Stats.IsMonitoring = false;
         Stats.StatusText = "Monitoring paused";
@@ -454,6 +511,8 @@ public sealed class NetworkMonitorService : IDisposable
             }
 
             newThreats.AddRange(_honeypot.DrainPending());
+            if (_suricataEnabled)
+                newThreats.AddRange(_suricata.DrainPending());
             newThreats.AddRange(_arpWatch.DrainPending());
             newThreats.AddRange(_launchWatch.DrainPending());
             newThreats.AddRange(_exfil.DrainPending());
@@ -815,6 +874,7 @@ public sealed class NetworkMonitorService : IDisposable
         _launchWatch.Dispose();
         _exfil.Dispose();
         _honeypot.Dispose();
+        _suricata.Dispose();
         _intel.Dispose();
         _webhook.Dispose();
         _history.Save();

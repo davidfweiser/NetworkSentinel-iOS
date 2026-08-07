@@ -30,9 +30,14 @@ public class ParsingTests
 
     [Fact]
     public void RejectsForeignRuleName()
+        => Assert.False(FirewallService.TryExtractIpFromManagedRule("com.apple.something", null, out _));
+
+    [Fact]
+    public void OwnLoopbackAddressIsRecognized()
     {
-        // The LocalAddresses.IsOwnAddress case from the Linux suite is deferred with
-        // the rest of the prevention work — that type does not exist here yet.
-        Assert.False(FirewallService.TryExtractIpFromManagedRule("com.apple.something", null, out _));
+        // lo0 carries 127.0.0.1 on any macOS host this suite runs on.
+        Assert.True(LocalAddresses.IsOwnAddress("127.0.0.1"));
+        Assert.False(LocalAddresses.IsOwnAddress("203.0.113.99"));
+        Assert.False(LocalAddresses.IsOwnAddress("not-an-ip"));
     }
 }
