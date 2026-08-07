@@ -48,9 +48,11 @@ struct ThreatsView: View {
                     List {
                         ForEach(threats.uniquedRows()) { row in
                             let t = row.value
-                            ThreatRow(threat: t) {
-                                Task { await model.requestBlock(ip: t.sourceIp) }
-                            }
+                            ThreatRow(
+                                threat: t,
+                                onBlock: { Task { await model.requestBlock(ip: t.sourceIp) } },
+                                onUnblock: { Task { await model.unblock(ip: t.sourceIp) } }
+                            )
                             .listRowBackground(NSTheme.row)
                             .listRowSeparatorTint(NSTheme.border)
                         }
@@ -105,6 +107,7 @@ struct ThreatsView: View {
 struct ThreatRow: View {
     let threat: ThreatInfo
     var onBlock: () -> Void
+    var onUnblock: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -135,6 +138,24 @@ struct ThreatRow: View {
                     .lineLimit(3)
             }
 
+            // Web 0.6.3+: whether this address is actually being blocked. The badge says
+            // what, the server's own sentence says why — the gate that stopped it, or the
+            // rule already in force. Without it the row names an address and leaves the
+            // reader to go and find out whether anything was done about it.
+            if let verdict = threat.blockVerdict {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    BlockBadge(verdict: verdict)
+                    if let status = threat.blockStatus, !status.isEmpty {
+                        Text(status)
+                            .font(.caption2)
+                            .foregroundStyle(NSTheme.muted)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+
             HStack {
                 if threat.isBlockable {
                     Label(threat.sourceIp, systemImage: "globe")
@@ -151,9 +172,17 @@ struct ThreatRow: View {
                 // Host-local detections (new listener, launch item) have no peer to
                 // firewall — the server rejects loopback, so the button is only an error.
                 if threat.isBlockable {
-                    Button("Block", action: onBlock)
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(NSTheme.danger)
+                    // An address already being dropped offers the release instead, as the
+                    // Hosts tab does: re-blocking it would only rewrite a rule in force.
+                    if threat.blockVerdict?.isBlocked == true {
+                        Button("Unblock", action: onUnblock)
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(NSTheme.success)
+                    } else {
+                        Button("Block", action: onBlock)
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(NSTheme.danger)
+                    }
                 }
             }
         }

@@ -155,14 +155,31 @@ struct CriticalBanner: View {
                     .font(.system(size: 11).monospaced())
                     .foregroundStyle(NSTheme.cyan)
                     .lineLimit(1)
+                // Web 0.6.3+: an alarm that names an address should say whether that
+                // address is being blocked — the whole point of the banner is that you
+                // do not have to open the console to find out what is happening.
+                if let verdict = payload.threat.blockVerdict,
+                   let status = payload.threat.blockStatus, !status.isEmpty {
+                    Text(status)
+                        .font(.system(size: 10))
+                        .foregroundStyle(
+                            verdict == .dryRun || verdict == .failed
+                                ? NSTheme.warning
+                                : NSTheme.mutedOnTint
+                        )
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             Spacer(minLength: 4)
 
             VStack(spacing: 6) {
                 // A 0.4+ host-local Critical has no peer to block; only the dismiss
-                // control is meaningful there.
-                if payload.threat.isBlockable {
+                // control is meaningful there. Nor is there anything to offer once the
+                // server has already blocked it — and a banner that dismisses itself
+                // after eight seconds is the worst place to put "release this address".
+                if payload.threat.isBlockable, payload.threat.blockVerdict?.isBlocked != true {
                     Button("Block", action: onBlock)
                         .font(.caption.weight(.bold))
                         .buttonStyle(.glassProminent)

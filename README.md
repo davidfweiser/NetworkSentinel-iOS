@@ -16,19 +16,19 @@ Connect to one or more hosts running the headless web UI (`-w` / `--web`), sign 
 | **DNS hygiene** | Plaintext egress, encrypted DNS going away, unapproved resolvers, allowlist drift — with the approved-resolver list (web 0.6+) |
 | **VPN peers** | WireGuard peer monitoring, per-peer transfer threshold, and the read-only peer table (web 0.6+) |
 | **Signatures** | Suricata EVE ingestion — feed path, maximum severity, muted signature ids (web 0.6+) |
-| **Threats** | Severity filters, search, clear alerts, block source IP |
+| **Threats** | Severity filters, search, clear alerts, block source IP — each row saying whether that IP is actually blocked (web 0.6.3+) |
 | **Hosts** | Remote peers with geo/threat badges; swipe to block/unblock |
 | **Connections** | Live process + endpoint table; block remote peers |
 | **More** | Listening ports, firewall rules, allowlist add/remove/refresh, server webhook URL, HTTPS + DuckDNS remote access and certificate issuance, change master password |
-| **Alerts** | Time-sensitive notifications and in-app popups for Critical threats, with catch-up on launch |
+| **Alerts** | Time-sensitive notifications and in-app popups for Critical threats, leading with whether the address was blocked (web 0.6.3+), with catch-up on launch |
 | **Secure storage** | Session tokens & optional remembered passwords in Keychain |
 
-Talks to the same JSON API as the browser console (Linux, Windows & macOS web **0.3.x – 0.6.x**, current through **0.6.2**):
+Talks to the same JSON API as the browser console (Linux, Windows & macOS web **0.3.x – 0.6.x**, current through **0.6.3**):
 
 - `GET /api/auth/status`
 - `POST /api/auth/login` · `/api/auth/setup` · `/api/auth/logout`
 - `POST /api/auth/change-password` (0.3.2+) — `currentPassword`, `newPassword`, `confirm`
-- `GET /api/state` (settings include `geoLookupEnabled` / `allowlistUseRemoteFeed` / `authLogMonitorEnabled` + `authLogStatus` / `probeLogEnabled` + `probeLogStatus` / `criticalAlertsEnabled`, on 0.4+ the intrusion-detection group, on 0.5+ the HTTPS/DuckDNS group, and on 0.6+ `preventionDryRun` / `conntrackEventsEnabled` / the DNS, WireGuard and Suricata groups; threats include `ts`; rules include `isProtected`, `address`, `ports`)
+- `GET /api/state` (settings include `geoLookupEnabled` / `allowlistUseRemoteFeed` / `authLogMonitorEnabled` + `authLogStatus` / `probeLogEnabled` + `probeLogStatus` / `criticalAlertsEnabled`, on 0.4+ the intrusion-detection group, on 0.5+ the HTTPS/DuckDNS group, and on 0.6+ `preventionDryRun` / `conntrackEventsEnabled` / the DNS, WireGuard and Suricata groups, on 0.6.3+ `autoBlockSummary`; threats include `ts` and on 0.6.3+ `blockStatus` / `blockShort` / `blocked`; rules include `isProtected`, `address`, `ports`)
 - `POST /api/action` — `block`, `unblock`, `set_setting`, `block_port`, `unblock_port`, `remove_rule`, `remove_all_rules`, allowlist, auto-block, …
 - `POST /api/action` — `sleep` / `wake` (web 0.5.1+), falling back to the `pause` / `resume` names every 0.3–0.5.0 server drives the same monitor state under
 - `POST /api/action` — `issue_cert` (web 0.5+)
@@ -82,6 +82,26 @@ Linux and Windows carry the same suite as of web 0.5.1.
 | **Signatures · Suricata** | EVE ingestion, the feed path, the maximum severity accepted (Suricata counts down — 1 is most severe), and the muted signature ids that stop one noisy rule burying every other alert |
 
 **Blocking a tunnel address.** The prevention engine screens CGNAT (100.64/10 — Tailscale and most WireGuard tunnels) out of auto-block entirely. A manual block still reaches it, so every **Block** button in the app routes through one confirmation first: the address is reachable, the block will succeed, and what it cuts off may be the tunnel you are managing the server through.
+
+### Every warning says whether the address is blocked (0.6.3)
+
+0.6.3 runs each batch of threats past the prevention engine *before* any alert about it leaves the machine, so a warning that names an address can also say whether that address is being stopped. The app carries the verdict everywhere it names one:
+
+| Where | What it shows |
+|-------|----------------|
+| **Threats** | A badge per row — **Blocked** (red), **Dry run** / **Block failed** (amber), **Not blocked** (muted) — with the server's own sentence beside it saying *why*: the gate that stopped it, or the rule already in force |
+| **Threats** | A row whose address is already blocked offers **Unblock** in place of **Block**, as the Hosts tab does. Re-blocking would only rewrite a rule that is already in force |
+| **Needs-attention card** | The verdict sentence, and the **Blocked** state in place of the hero Block button once the server has already blocked it |
+| **Critical notifications** | The title leads with it — `Blocked · Critical — <server>` or `NOT blocked · Critical — <server>` — and the body carries the full reason. A batch overflowing the per-alert cap reports the tally (`+3 more critical alerts — 2 of 3 blocked`) |
+| **Critical banner** | The same sentence, and no Block button on an address already being dropped |
+
+Dry run and a refused rule both read as **NOT blocked** in an alert, because neither one is stopping anything.
+
+The verdict is deliberately left off the host-local detections. The server does answer for those (*"private address, never auto-blocked"*), but a new-listener or persistence-change row has already replaced the address with *what* was detected, precisely because there is no peer to firewall — a "No" beside it only raises a question the row has already answered.
+
+**Auto-block has three states, not two.** The Dashboard control now reads **Auto-block off** / **Auto-block dry run** (amber) / **Auto-block on** (red), rather than showing a red "on" over an engine that is deliberately writing no rules. 0.6.3 publishes the engine's own `autoBlockSummary` for exactly this reason — every frontend used to rebuild that string and every one of them dropped dry run. The app keeps the button compact because the minimum level sits in its own chip beside it; the engine's full sentence still arrives in the status header the moment the toggle flips, and VoiceOver reads it from the button.
+
+Servers older than 0.6.3 send none of these fields, so every badge, sentence and Unblock swap simply does not appear — the app behaves exactly as it did before.
 
 ### Sleep / Wake
 
