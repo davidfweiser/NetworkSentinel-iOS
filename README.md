@@ -330,6 +330,10 @@ The token is written to `duckdns.json` (mode `0600`), not `settings.json`; the G
 4. Public IPs that hit that severity get PF drop rules automatically.
 5. Private/LAN addresses, “new host” info events, and allowlisted sites are **never** auto-blocked.
 
+**What auto-block will never touch.** LAN, loopback, link-local, multicast/broadcast, and **CGNAT (100.64.0.0/10** — where Tailscale and many VPN tunnel subnets live**)**. Blocking a CGNAT address would only ever cut off a tunnel peer, so it is not something a heuristic should decide.
+
+A **manual** block of a CGNAT address is still allowed, behind a confirmation naming what it costs — a hostile tailnet peer brute-forcing SSH is a real case, and refusing it in the manual path too would leave you with no way to stop the attack from inside the app. Addresses that would cut this Mac off from its own network (LAN, loopback, link-local, multicast) stay refused everywhere.
+
 ---
 
 ## How it works (high level)

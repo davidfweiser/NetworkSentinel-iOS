@@ -88,7 +88,9 @@ public sealed class FirewallService
         if (!TryNormalizeIp(ip, out var normalized, out var error))
             return FirewallOperationResult.Fail(error);
 
-        if (IsPrivateOrLocal(normalized))
+        // Auto-block screens CGNAT out one gate earlier, so anything reaching here in
+        // that range is a deliberate manual block.
+        if (IsNeverBlockable(normalized))
             return FirewallOperationResult.Fail("Refusing to block private/local addresses (LAN, loopback, link-local).");
 
         if (!overrideAllowlist && Allowlist != null && Allowlist.IsAllowed(normalized, out var allowReason))
@@ -1079,6 +1081,19 @@ public sealed class FirewallService
 
     public static bool IsPrivateOrLocal(string ip)
         => GeoIpService.IsNonPublic(ip);
+
+    /// <summary>
+    /// Addresses no rule may ever target, because dropping them breaks the machine's
+    /// own connectivity: LAN, loopback, link-local, multicast/broadcast.
+    ///
+    /// Narrower than <see cref="IsPrivateOrLocal"/>, which also covers CGNAT and is
+    /// the right gate for <em>automatic</em> blocking. Blocking a tunnel peer is a
+    /// bad default, not an impossible request — a hostile tailnet peer brute-forcing
+    /// SSH is a real case, and refusing it in the manual path too left the operator
+    /// with no way to stop the attack from inside the app.
+    /// </summary>
+    public static bool IsNeverBlockable(string ip)
+        => GeoIpService.IsNonPublic(ip) && !GeoIpService.IsCarrierGradeNat(ip);
 
     [DllImport("libc")]
     private static extern uint geteuid();

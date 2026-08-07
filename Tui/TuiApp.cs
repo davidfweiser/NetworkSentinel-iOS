@@ -671,6 +671,14 @@ public sealed class TuiApp : IDisposable
             return;
         }
 
+        // Auto-block never touches CGNAT; a manual block may, once confirmed.
+        if (GeoIpService.IsCarrierGradeNat(ip.Trim()) &&
+            !Confirm($"{ip.Trim()} is carrier-NAT (100.64.0.0/10) — blocking it cuts off that tunnel peer. Block it anyway?"))
+        {
+            _statusMessage = "Block cancelled.";
+            return;
+        }
+
         var result = _firewall.BlockIp(ip.Trim(), ResolveDirection(), "TUI block");
         _statusMessage = result.Message;
         if (result.Success)
