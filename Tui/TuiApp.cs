@@ -665,25 +665,51 @@ public sealed class TuiApp : IDisposable
             return;
         }
 
-        if (!Confirm($"Block {ip.Trim()} (inbound+outbound)?"))
+        // Same pre-flight the GUI and web console do, so all three frontends agree.
+        if (!FirewallService.TryNormalizeIp(ip, out var normalized, out var error))
+        {
+            _statusMessage = error;
+            return;
+        }
+
+        if (FirewallService.IsNeverBlockable(normalized))
+        {
+            _statusMessage = "Private/local addresses are not blocked (would break LAN).";
+            return;
+        }
+
+        var overrideAllowlist = false;
+        if (_allowlist.IsAllowed(normalized, out var allowReason))
+        {
+            // The GUI and web offer this override; the TUI used to just fail, so an
+            // operator could not block an allowlisted address from here at all.
+            if (!Confirm($"{normalized} is protected by the allowlist ({allowReason}). Block it anyway?"))
+            {
+                _statusMessage = $"Protected by allowlist — not blocked: {normalized} ({allowReason}).";
+                return;
+            }
+            overrideAllowlist = true;
+        }
+
+        if (!Confirm($"Block {normalized} ({ResolveDirection()})?"))
         {
             _statusMessage = "Block cancelled.";
             return;
         }
 
         // Auto-block never touches CGNAT; a manual block may, once confirmed.
-        if (GeoIpService.IsCarrierGradeNat(ip.Trim()) &&
-            !Confirm($"{ip.Trim()} is carrier-NAT (100.64.0.0/10) — blocking it cuts off that tunnel peer. Block it anyway?"))
+        if (GeoIpService.IsCarrierGradeNat(normalized) &&
+            !Confirm($"{normalized} is carrier-NAT (100.64.0.0/10) — blocking it cuts off that tunnel peer. Block it anyway?"))
         {
             _statusMessage = "Block cancelled.";
             return;
         }
 
-        var result = _firewall.BlockIp(ip.Trim(), ResolveDirection(), "TUI block");
+        var result = _firewall.BlockIp(normalized, ResolveDirection(), "TUI block", overrideAllowlist);
         _statusMessage = result.Message;
         if (result.Success)
         {
-            _blockedIps.Add(ip.Trim());
+            _blockedIps.Add(normalized);
             RefreshBlockedIps(force: true);
         }
     }
@@ -710,6 +736,17 @@ public sealed class TuiApp : IDisposable
         }
 
         var result = _firewall.UnblockIp(ip.Trim());
+        if (result.Success && FirewallService.TryNormalizeIp(ip, out var normalized, out _))
+        {
+            // The GUI clears both sets on a manual release; the TUI left the
+            // attempt marker behind, so its own retry backoff kept treating the
+            // address as recently attempted.
+            lock (_autoBlockGate)
+            {
+                _blockedIps.Remove(normalized);
+                _autoBlockAttempted.Remove(normalized);
+            }
+        }
         _statusMessage = result.Message;
         RefreshBlockedIps(force: true);
     }
@@ -1479,5 +1516,8 @@ public sealed class TuiApp : IDisposable
         _monitor.Updated -= OnMonitorUpdated;
         _monitor.ThreatsDetected -= OnThreatsDetected;
         _monitor.Dispose();
+        // Its timers and HTTP client leaked on exit; the GUI and web console
+        // already dispose theirs.
+        _allowlist.Dispose();
     }
 }
