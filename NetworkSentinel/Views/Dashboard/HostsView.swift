@@ -3,6 +3,8 @@ import UIKit
 
 struct HostsView: View {
     @Environment(AppModel.self) private var model
+    /// Set when this list is one half of the Traffic tab; nil when it stands alone.
+    var mode: Binding<TrafficMode>?
     @State private var query = ""
     @State private var showBlockedOnly = false
     @State private var confirmBlock: HostInfo?
@@ -80,8 +82,14 @@ struct HostsView: View {
             .nsSleepAware(model.isAsleep) { Task { await model.wakeConsole() } }
             .background { AmbientField() }
             .navigationTitle("Hosts")
+            .navigationBarTitleDisplayMode(mode == nil ? .automatic : .inline)
             .searchable(text: $query, prompt: "IP, name, geo")
             .toolbar {
+                if let mode {
+                    ToolbarItem(placement: .principal) {
+                        TrafficModePicker(mode: mode)
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Toggle(isOn: $showBlockedOnly) {
                         Image(systemName: showBlockedOnly ? "hand.raised.fill" : "hand.raised")

@@ -6,6 +6,12 @@ import SwiftUI
 /// but scrubbable: drag to pin any sample and read its exact values.
 struct ActivityChart: View {
     let points: [ActivityPoint]
+    /// `.card` is the standalone panel — its own eyebrow, readout and legend. `.compact` is
+    /// the trace alone, for the Status screen's instrument panel where the counts above it
+    /// already say what the numbers are and a second readout would be the same figure twice.
+    var style: Style = .card
+
+    enum Style { case card, compact }
 
     @State private var selectedIndex: Int?
 
@@ -42,7 +48,7 @@ struct ActivityChart: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            header
+            if style == .card { header }
 
             Chart(samples) { s in
                 AreaMark(
@@ -98,18 +104,33 @@ struct ActivityChart: View {
             .chartYScale(domain: 0...upperBound)
             .chartXAxis(.hidden)
             .chartYAxis {
-                AxisMarks(position: .trailing, values: [0, upperBound]) {
-                    AxisGridLine().foregroundStyle(Color.white.opacity(0.08))
-                    AxisValueLabel()
-                        .font(.system(size: 9))
-                        .foregroundStyle(NSTheme.muted)
+                if style == .card {
+                    AxisMarks(position: .trailing, values: [0, upperBound]) {
+                        AxisGridLine().foregroundStyle(Color.white.opacity(0.08))
+                        AxisValueLabel()
+                            .font(.system(size: 9))
+                            .foregroundStyle(NSTheme.muted)
+                    }
                 }
             }
             .chartXSelection(value: $selectedIndex)
-            .frame(height: 108)
+            .frame(height: style == .card ? 108 : 46)
             .animation(.easeInOut(duration: 0.4), value: samples.count)
 
-            footer
+            if style == .card {
+                footer
+            } else {
+                // The trace still scrubs in compact form, so it keeps the one line that says
+                // what the two ends of it mean.
+                HStack {
+                    Text(selected?.time ?? samples.first?.time ?? "")
+                    Spacer()
+                    Text(selected.map { "\($0.connections) conns" } ?? "peak \(upperBound)")
+                }
+                .font(.system(size: 10).monospaced())
+                .foregroundStyle(NSTheme.muted)
+                .animation(.snappy(duration: 0.2), value: selectedIndex)
+            }
         }
     }
 

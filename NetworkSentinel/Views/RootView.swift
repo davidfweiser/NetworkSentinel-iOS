@@ -313,9 +313,12 @@ struct MainTabView: View {
     }
 
     var body: some View {
+        // Four tabs, not five: Hosts and Connections were two readings of one question and
+        // are now one Traffic tab, and the Dashboard's settings cards moved to Detection —
+        // which leaves Status as a screen you read rather than scroll.
         TabView(selection: $tab) {
-            Tab("Dashboard", systemImage: "gauge.with.dots.needle.67percent", value: 0) {
-                DashboardView(showServers: $showServers)
+            Tab("Status", systemImage: "gauge.with.dots.needle.67percent", value: 0) {
+                StatusView(showServers: $showServers, onOpenThreats: { tab = 1 })
             }
 
             Tab("Threats", systemImage: "exclamationmark.shield.fill", value: 1) {
@@ -323,15 +326,11 @@ struct MainTabView: View {
             }
             .badge(model.attentionThreat == nil ? 0 : model.attentionBacklog + 1)
 
-            Tab("Hosts", systemImage: "network", value: 2) {
-                HostsView()
+            Tab("Traffic", systemImage: "arrow.left.arrow.right", value: 2) {
+                TrafficView()
             }
 
-            Tab("Connections", systemImage: "arrow.left.arrow.right", value: 3) {
-                ConnectionsView()
-            }
-
-            Tab("More", systemImage: "ellipsis.circle", value: 4) {
+            Tab("More", systemImage: "ellipsis.circle", value: 3) {
                 MoreView()
             }
         }

@@ -2,6 +2,8 @@ import SwiftUI
 
 struct ConnectionsView: View {
     @Environment(AppModel.self) private var model
+    /// Set when this list is one half of the Traffic tab; nil when it stands alone.
+    var mode: Binding<TrafficMode>?
     @State private var query = ""
 
     private var connections: [ConnectionInfo] {
@@ -49,8 +51,14 @@ struct ConnectionsView: View {
             .nsSleepAware(model.isAsleep) { Task { await model.wakeConsole() } }
             .background { AmbientField() }
             .navigationTitle("Connections")
+            .navigationBarTitleDisplayMode(mode == nil ? .automatic : .inline)
             .searchable(text: $query, prompt: "Process, IP, state")
             .toolbar {
+                if let mode {
+                    ToolbarItem(placement: .principal) {
+                        TrafficModePicker(mode: mode)
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Text("\(connections.count)")
                         .font(.caption.weight(.bold))
