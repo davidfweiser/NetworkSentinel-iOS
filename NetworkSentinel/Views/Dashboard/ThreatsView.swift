@@ -119,11 +119,13 @@ struct ThreatsView: View {
 
 struct ThreatRow: View {
     let threat: ThreatInfo
-    /// The source already carries a block rule, so Block would only rewrite it. The row
-    /// says so and offers the way back out instead.
+    /// Fallback for servers older than 0.6.3, which report no verdict: whether the client
+    /// can see a block rule for this source itself. `threat.blockVerdict` outranks it
+    /// wherever the server does answer — it knows about dry run and failed blocks, which
+    /// no amount of reading the rule list can tell apart from "not blocked".
     var isBlocked: Bool = false
     var onBlock: () -> Void
-    var onUnblock: () -> Void = {}
+    var onUnblock: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -154,6 +156,24 @@ struct ThreatRow: View {
                     .lineLimit(3)
             }
 
+            // Web 0.6.3+: whether this address is actually being blocked. The badge says
+            // what, the server's own sentence says why — the gate that stopped it, or the
+            // rule already in force. Without it the row names an address and leaves the
+            // reader to go and find out whether anything was done about it.
+            if let verdict = threat.blockVerdict {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    BlockBadge(verdict: verdict)
+                    if let status = threat.blockStatus, !status.isEmpty {
+                        Text(status)
+                            .font(.caption2)
+                            .foregroundStyle(NSTheme.muted)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+
             HStack {
                 if threat.isBlockable {
                     Label(threat.sourceIp, systemImage: "globe")
@@ -170,13 +190,9 @@ struct ThreatRow: View {
                 // Host-local detections (new listener, launch item) have no peer to
                 // firewall — the server rejects loopback, so the button is only an error.
                 if threat.isBlockable {
-                    if isBlocked {
-                        Text("BLOCKED")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(NSTheme.danger)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(NSTheme.danger.opacity(0.15), in: Capsule())
+                    // An address already being dropped offers the release instead, as the
+                    // Hosts tab does: re-blocking it would only rewrite a rule in force.
+                    if threat.blockVerdict?.isBlocked ?? isBlocked {
                         Button("Unblock", action: onUnblock)
                             .font(.caption.weight(.bold))
                             .foregroundStyle(NSTheme.success)

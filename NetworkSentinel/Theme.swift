@@ -206,6 +206,29 @@ struct SeverityBadge: View {
     }
 }
 
+/// The prevention engine's verdict on a threat's address (web ≥ 0.6.3). Sits beside
+/// `SeverityBadge` and answers the other half of the question: severity is how bad this is,
+/// this is whether anything is currently stopping it.
+struct BlockBadge: View {
+    let verdict: BlockVerdict
+
+    var body: some View {
+        Label(verdict.label.uppercased(), systemImage: verdict.icon)
+            .font(.system(size: 10, weight: .bold))
+            .tracking(0.6)
+            .foregroundStyle(verdict.tint)
+            .labelStyle(.titleAndIcon)
+            .lineLimit(1)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(verdict.tint.opacity(0.16), in: .capsule)
+            .overlay(
+                Capsule().stroke(verdict.tint.opacity(0.35), lineWidth: 0.5)
+            )
+            .accessibilityLabel("Block status: \(verdict.label)")
+    }
+}
+
 // MARK: - Sleep
 
 /// What the console is doing while asleep, and the one control worth pressing. Carries its

@@ -90,7 +90,13 @@ final class CriticalAlertService {
         let center = UNUserNotificationCenter.current()
         for (index, t) in threats.prefix(5).enumerated() {
             let content = UNMutableNotificationContent()
-            content.title = "Critical — \(serverName)"
+            // Web 0.6.3+ leads with the verdict, and a lock screen is exactly where it
+            // earns its place: this is the one moment the console is not in front of you,
+            // so a warning that names an address without saying whether anything stopped
+            // it is a question you have to go and answer under pressure.
+            let verdict = t.blockVerdict
+            content.title = verdict.map { "\($0.alertPrefix) · Critical — \(serverName)" }
+                ?? "Critical — \(serverName)"
             // Host-local detectors (0.4+) report loopback rather than a peer; the threat
             // type says far more on a lock screen than "127.0.0.1" does.
             content.subtitle = t.isBlockable ? t.sourceIp : (t.type ?? t.sourceIp)
@@ -98,11 +104,16 @@ final class CriticalAlertService {
             if let detail = t.detail, !detail.isEmpty {
                 content.body = "\(t.title)\n\(detail)"
             }
+            // The gate that stopped it, or the rule now in force — the server's own words.
+            if verdict != nil, let status = t.blockStatus, !status.isEmpty {
+                content.body = "\(content.body)\n\(status)"
+            }
             content.sound = .default
             content.interruptionLevel = .timeSensitive
             content.userInfo = [
                 "sourceIp": t.sourceIp,
-                "title": t.title
+                "title": t.title,
+                "blocked": t.blocked ?? false
             ]
 
             let request = UNNotificationRequest(
@@ -113,10 +124,21 @@ final class CriticalAlertService {
             center.add(request)
         }
 
-        if threats.count > 5 {
+        let overflow = threats.dropFirst(5)
+        if !overflow.isEmpty {
             let content = UNMutableNotificationContent()
             content.title = "Critical — \(serverName)"
-            content.body = "+\(threats.count - 5) more critical alerts"
+            content.body = "+\(overflow.count) more critical alerts"
+            // The same tally the server puts on a multi-threat popup. Counted over the
+            // ones that named a blockable address: "2 of 3" is only meaningful against
+            // the threats blocking could ever have applied to.
+            let known = overflow.filter { $0.blockVerdict != nil }
+            if !known.isEmpty {
+                let n = known.filter { $0.blockVerdict?.isBlocked == true }.count
+                content.body += n == known.count
+                    ? " — all blocked"
+                    : " — \(n) of \(known.count) blocked"
+            }
             content.sound = .default
             content.interruptionLevel = .timeSensitive
             center.add(UNNotificationRequest(

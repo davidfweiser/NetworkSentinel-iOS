@@ -16,6 +16,31 @@ struct DashboardView: View {
     private var monitoring: Bool { settings?.isMonitoring ?? stats?.isMonitoring ?? false }
     private var asleep: Bool { model.isAsleep }
 
+    // MARK: Auto-block state
+    //
+    // Auto-block has three states, not two: web 0.6's dry run walks every gate and writes
+    // nothing. A red "Auto-block on" over an engine deliberately writing no rules is the
+    // one state that most needs naming — 0.6.3 made the server publish `autoBlockSummary`
+    // precisely because every frontend rebuilt this string and every one dropped dry run.
+    //
+    // Kept compact rather than shown verbatim: the level sits in its own chip beside this
+    // button, so the server's "(≥High)" would be a second copy of it on a narrow screen.
+    // The engine's full sentence still reaches the user — the server sets it as the status
+    // message when the toggle flips, and the status header renders that.
+
+    private var autoBlockOn: Bool { settings?.autoBlockEnabled ?? false }
+    private var autoBlockDryRun: Bool { settings?.preventionDryRun ?? false }
+
+    private var autoBlockTitle: String {
+        guard autoBlockOn else { return "Auto-block off" }
+        return autoBlockDryRun ? "Auto-block dry run" : "Auto-block on"
+    }
+
+    private var autoBlockTint: Color {
+        guard autoBlockOn else { return NSTheme.muted }
+        return autoBlockDryRun ? NSTheme.warning : NSTheme.danger
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -203,6 +228,20 @@ struct DashboardView: View {
                         .lineLimit(2)
                 }
 
+                // Web 0.6.3+: the card leads with the one action that stops this, so it has
+                // to say when the server already took it — otherwise the hero button is
+                // "Block" on an address that is being dropped already.
+                if let verdict = t.blockVerdict, let status = t.blockStatus, !status.isEmpty {
+                    Text(status)
+                        .font(.caption2)
+                        .foregroundStyle(
+                            verdict == .dryRun || verdict == .failed
+                                ? NSTheme.warning
+                                : NSTheme.mutedOnTint
+                        )
+                        .lineLimit(2)
+                }
+
                 HStack(spacing: 10) {
                     SeverityBadge(level: t.level, levelNum: t.levelNum)
                     // 0.4+ host-local detectors (new listener, launch item) report loopback
@@ -214,12 +253,21 @@ struct DashboardView: View {
                         .lineLimit(1)
                     Spacer()
                     if t.isBlockable {
-                        Button("Block") {
-                            Task { await model.requestBlock(ip: t.sourceIp) }
+                        if t.blockVerdict?.isBlocked == true {
+                            // Deliberately a state, not an Unblock button. Releasing an
+                            // address is not the action this card exists to offer, and as
+                            // the most prominent control on the Dashboard it would put
+                            // "undo the protection" one stray tap away. The Threats tab
+                            // offers the release, on the row it belongs to.
+                            BlockBadge(verdict: .blocked)
+                        } else {
+                            Button("Block") {
+                                Task { await model.requestBlock(ip: t.sourceIp) }
+                            }
+                            .font(.subheadline.weight(.semibold))
+                            .buttonStyle(.glassProminent)
+                            .tint(severity.color)
                         }
-                        .font(.subheadline.weight(.semibold))
-                        .buttonStyle(.glassProminent)
-                        .tint(severity.color)
                     } else {
                         // Nothing to firewall — the fix is on the server itself, so send
                         // the user to the full detail rather than to a failing action.
@@ -329,13 +377,15 @@ struct DashboardView: View {
                     }
 
                     controlButton(
-                        title: (settings?.autoBlockEnabled ?? false) ? "Auto-block on" : "Auto-block off",
+                        title: autoBlockTitle,
                         icon: "hand.raised.fill",
-                        tint: (settings?.autoBlockEnabled ?? false) ? NSTheme.danger : NSTheme.muted
+                        tint: autoBlockTint
                     ) {
                         await model.toggleAutoblock()
                     }
                     .glassEffectID("autoblock", in: glassNamespace)
+                    // The engine's own wording, for anyone who cannot see the tint.
+                    .accessibilityValue(settings?.autoBlockSummary ?? autoBlockTitle)
 
                     Menu {
                         ForEach(["Medium", "High", "Critical"], id: \.self) { level in
