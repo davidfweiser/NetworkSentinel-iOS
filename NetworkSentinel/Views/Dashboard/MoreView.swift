@@ -9,6 +9,9 @@ struct MoreView: View {
     @State private var showAddAllowlist = false
     @State private var showBlockPort = false
     @State private var blockPortText = ""
+    @State private var showBlockIP = false
+    @State private var blockIPText = ""
+    @State private var pendingRuleRemoval: FirewallRuleGroup?
     @State private var confirmRemoveAll = false
     @State private var showWebhook = false
     @State private var webhookDraft = ""
@@ -155,10 +158,13 @@ struct MoreView: View {
 
                 Section {
                     if let ports = model.state?.ports, !ports.isEmpty {
+                        let blockedPorts = (model.state?.firewallRules ?? []).blockedPortKeys()
                         ForEach(ports.uniquedRows()) { row in
                             let p = row.value
+                            let proto = p.protocolName.uppercased()
+                            let isBlocked = blockedPorts.contains("\(proto)/\(p.port)")
                             HStack {
-                                Text(p.protocolName.uppercased())
+                                Text(proto)
                                     .font(.caption2.weight(.bold))
                                     .foregroundStyle(NSTheme.accent)
                                     .frame(width: 36, alignment: .leading)
@@ -172,32 +178,57 @@ struct MoreView: View {
                                         .lineLimit(1)
                                 }
                                 Spacer(minLength: 8)
-                                Button("Block") {
-                                    Task {
-                                        await model.blockPort(
-                                            p.port,
-                                            protocol: p.protocolName.uppercased(),
-                                            direction: "Inbound"
-                                        )
+                                // A port already carrying a managed rule needs the opposite
+                                // button: Block there did nothing but re-write the same rule.
+                                if isBlocked {
+                                    Text("BLOCKED")
+                                        .font(.system(size: 9, weight: .bold))
+                                        .foregroundStyle(NSTheme.danger)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(NSTheme.danger.opacity(0.15), in: Capsule())
+                                    Button("Unblock") {
+                                        Task { await model.unblockPort(p.port, protocol: proto) }
                                     }
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(NSTheme.success)
+                                } else {
+                                    Button("Block") {
+                                        Task {
+                                            await model.blockPort(
+                                                p.port,
+                                                protocol: proto,
+                                                direction: "Inbound"
+                                            )
+                                        }
+                                    }
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(NSTheme.danger)
                                 }
-                                .font(.caption.weight(.bold))
-                                .foregroundStyle(NSTheme.danger)
                             }
                             .listRowBackground(NSTheme.row)
                             .swipeActions {
-                                Button {
-                                    Task {
-                                        await model.blockPort(
-                                            p.port,
-                                            protocol: p.protocolName.uppercased(),
-                                            direction: "Inbound"
-                                        )
+                                if isBlocked {
+                                    Button {
+                                        Task { await model.unblockPort(p.port, protocol: proto) }
+                                    } label: {
+                                        Label("Unblock port", systemImage: "lock.open")
                                     }
-                                } label: {
-                                    Label("Block port", systemImage: "hand.raised.fill")
+                                    .tint(NSTheme.success)
+                                } else {
+                                    Button {
+                                        Task {
+                                            await model.blockPort(
+                                                p.port,
+                                                protocol: proto,
+                                                direction: "Inbound"
+                                            )
+                                        }
+                                    } label: {
+                                        Label("Block port", systemImage: "hand.raised.fill")
+                                    }
+                                    .tint(NSTheme.danger)
                                 }
-                                .tint(NSTheme.danger)
                             }
                         }
                     } else {
@@ -216,99 +247,10 @@ struct MoreView: View {
                 } header: {
                     Text("Ports")
                 } footer: {
-                    Text("Block port uses the web 0.3+ API. Do not block the console’s own listen port.")
+                    Text("Block port uses the web 0.3+ API. Do not block the console’s own listen port. A blocked port that has stopped listening drops off this list — lift it under Firewall rules.")
                 }
 
-                Section {
-                    if let rules = model.state?.firewallRules, !rules.isEmpty {
-                        ForEach(rules.uniquedRows()) { row in
-                            let r = row.value
-                            VStack(alignment: .leading, spacing: 4) {
-                                HStack {
-                                    Text(r.displayAddress)
-                                        .font(.subheadline.monospaced().weight(.semibold))
-                                        .foregroundStyle(NSTheme.text)
-                                        .lineLimit(1)
-                                    Spacer()
-                                    if r.isProtectedRule {
-                                        Text("PROTECTED")
-                                            .font(.system(size: 9, weight: .bold))
-                                            .foregroundStyle(NSTheme.warning)
-                                            .padding(.horizontal, 6)
-                                            .padding(.vertical, 2)
-                                            .background(NSTheme.warning.opacity(0.15), in: Capsule())
-                                    }
-                                    Text(r.action ?? "block")
-                                        .font(.caption2.weight(.bold))
-                                        .foregroundStyle(NSTheme.danger)
-                                }
-                                if r.target != r.displayAddress {
-                                    Text(r.target)
-                                        .font(.caption2.monospaced())
-                                        .foregroundStyle(NSTheme.muted)
-                                        .lineLimit(1)
-                                }
-                                Text(
-                                    [r.direction, r.kind, r.protocolName, r.ports]
-                                        .compactMap { $0 }
-                                        .filter { !$0.isEmpty }
-                                        .joined(separator: " · ")
-                                )
-                                .font(.caption)
-                                .foregroundStyle(NSTheme.muted)
-                                if let d = r.description, !d.isEmpty {
-                                    Text(d)
-                                        .font(.caption2)
-                                        .foregroundStyle(NSTheme.muted)
-                                        .lineLimit(2)
-                                }
-                            }
-                            .listRowBackground(NSTheme.row)
-                            .swipeActions(edge: .trailing, allowsFullSwipe: !r.isProtectedRule) {
-                                if !r.isProtectedRule {
-                                    Button(role: .destructive) {
-                                        Task { await model.removeRule(named: r.name) }
-                                    } label: {
-                                        Label("Remove", systemImage: "trash")
-                                    }
-                                    // IP-style unblock when address looks like an IP
-                                    if looksLikeIP(r.displayAddress) {
-                                        Button {
-                                            Task { await model.unblock(ip: r.displayAddress) }
-                                        } label: {
-                                            Label("Unblock", systemImage: "lock.open")
-                                        }
-                                        .tint(NSTheme.success)
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        Text("No managed firewall rules")
-                            .foregroundStyle(NSTheme.muted)
-                            .listRowBackground(NSTheme.row)
-                    }
-
-                    Button {
-                        Task { await model.authorizeFirewall() }
-                    } label: {
-                        Label("Authorize firewall", systemImage: "lock.open")
-                    }
-                    .listRowBackground(NSTheme.row)
-
-                    Button(role: .destructive) {
-                        confirmRemoveAll = true
-                    } label: {
-                        Label("Remove all managed rules", systemImage: "trash")
-                    }
-                    .listRowBackground(NSTheme.row)
-                } header: {
-                    Text("Firewall rules")
-                } footer: {
-                    if let priv = model.state?.firewall?.privilegeText {
-                        Text(priv)
-                    }
-                }
+                firewallRulesSection
 
                 Section {
                     if let entries = model.state?.allowlist, !entries.isEmpty {
@@ -463,9 +405,190 @@ struct MoreView: View {
             } message: {
                 Text("Deletes managed IP/port rules. The web console’s protected allow rule is left alone when possible.")
             }
+            .alert("Block an IP", isPresented: $showBlockIP) {
+                TextField("IP address", text: $blockIPText)
+                    .keyboardType(.numbersAndPunctuation)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                Button("Block", role: .destructive) {
+                    let ip = blockIPText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !ip.isEmpty else { return }
+                    Task {
+                        await model.requestBlock(ip: ip)
+                        blockIPText = ""
+                    }
+                }
+                Button("Cancel", role: .cancel) { blockIPText = "" }
+            } message: {
+                Text("Writes an inbound and outbound block rule on the server, the same as the web console’s Block IP.")
+            }
+            .confirmationDialog(
+                "Remove this firewall rule?",
+                isPresented: Binding(
+                    get: { pendingRuleRemoval != nil },
+                    set: { if !$0 { pendingRuleRemoval = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                if let group = pendingRuleRemoval {
+                    Button("Remove \(group.primary.displayAddress)", role: .destructive) {
+                        Task { await model.removeRule(named: group.primary.name) }
+                        pendingRuleRemoval = nil
+                    }
+                    Button("Cancel", role: .cancel) { pendingRuleRemoval = nil }
+                }
+            } message: {
+                Text("Lifts the block: the server deletes the inbound and outbound rules together and holds auto-block off this target for 24 hours.")
+            }
             .nsTextSettingAlert($textEdit, draft: $textEditDraft)
             .refreshable { await model.refresh(silent: false) }
         }
+    }
+
+    // MARK: - Firewall rules
+    //
+    // The web console's Firewall tab, mirrored: one row per block, with the Remove button
+    // on the row rather than behind a swipe. Swipe-only removal was why blocking looked
+    // one-way from the phone — the Block buttons were the only firewall control on screen.
+
+    @ViewBuilder
+    private var firewallRulesSection: some View {
+        Section {
+            // Blocks are written as an -In/-Out pair, so the raw list shows each one twice
+            // and removing either half clears both. Group them the way the web console does.
+            let groups = (model.state?.firewallRules ?? []).groupedByBlock()
+            if groups.isEmpty {
+                Text("No managed firewall rules")
+                    .foregroundStyle(NSTheme.muted)
+                    .listRowBackground(NSTheme.row)
+            } else {
+                ForEach(groups) { group in
+                    firewallRuleRow(group)
+                }
+            }
+
+            Button {
+                blockIPText = ""
+                showBlockIP = true
+            } label: {
+                Label("Block IP…", systemImage: "plus.circle")
+            }
+            .listRowBackground(NSTheme.row)
+
+            Button {
+                Task { await model.authorizeFirewall() }
+            } label: {
+                Label("Authorize firewall", systemImage: "lock.open")
+            }
+            .listRowBackground(NSTheme.row)
+
+            Button(role: .destructive) {
+                confirmRemoveAll = true
+            } label: {
+                Label("Remove all managed rules", systemImage: "trash")
+            }
+            .listRowBackground(NSTheme.row)
+        } header: {
+            Text("Firewall rules")
+        } footer: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Each row is one block. Remove deletes its inbound and outbound rules together and keeps auto-block from putting the same target back for 24 hours.")
+                if let priv = model.state?.firewall?.privilegeText {
+                    Text(priv)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func firewallRuleRow(_ group: FirewallRuleGroup) -> some View {
+        let rule = group.primary
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text(rule.displayAddress)
+                    .font(.subheadline.monospaced().weight(.semibold))
+                    .foregroundStyle(NSTheme.text)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                if group.isProtected {
+                    ruleChip("PROTECTED", color: NSTheme.warning)
+                }
+                Text(rule.action ?? "Block")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(NSTheme.danger)
+            }
+
+            if rule.target != rule.displayAddress {
+                Text(rule.target)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(NSTheme.muted)
+                    .lineLimit(1)
+            }
+
+            // Directions come from the pair, so a block missing its outbound half is
+            // visible here instead of silently reading as fully blocked.
+            HStack(spacing: 6) {
+                ForEach(Array(group.directions.enumerated()), id: \.offset) { _, direction in
+                    ruleChip(direction, color: NSTheme.accent)
+                }
+                ruleChip(group.isEnabled ? "On" : "Off",
+                         color: group.isEnabled ? NSTheme.success : NSTheme.muted)
+                Text(
+                    [rule.kind, rule.protocolName, rule.ports]
+                        .compactMap { $0 }
+                        .filter { !$0.isEmpty && $0 != "Any" }
+                        .joined(separator: " · ")
+                )
+                .font(.caption)
+                .foregroundStyle(NSTheme.muted)
+                .lineLimit(1)
+            }
+
+            if let detail = rule.description, !detail.isEmpty {
+                Text(detail)
+                    .font(.caption2)
+                    .foregroundStyle(NSTheme.muted)
+                    .lineLimit(2)
+            }
+
+            HStack {
+                Text(group.id)
+                    .font(.system(size: 10).monospaced())
+                    .foregroundStyle(NSTheme.muted)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                if group.isProtected {
+                    // Removing this one from here would cut the app off from the console.
+                    Text("this console")
+                        .font(.caption2)
+                        .foregroundStyle(NSTheme.muted)
+                } else {
+                    Button("Remove") { pendingRuleRemoval = group }
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(NSTheme.success)
+                        .buttonStyle(.borderless)
+                }
+            }
+        }
+        .listRowBackground(NSTheme.row)
+        .swipeActions(edge: .trailing, allowsFullSwipe: !group.isProtected) {
+            if !group.isProtected {
+                Button(role: .destructive) {
+                    pendingRuleRemoval = group
+                } label: {
+                    Label("Remove", systemImage: "trash")
+                }
+            }
+        }
+    }
+
+    private func ruleChip(_ text: String, color: Color) -> some View {
+        Text(text)
+            .font(.system(size: 9, weight: .bold))
+            .foregroundStyle(color)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(color.opacity(0.15), in: Capsule())
     }
 
     // MARK: - Remote access (web 0.5+)
@@ -706,13 +829,5 @@ struct MoreView: View {
             return
         }
         Task { await model.blockPort(port, protocol: proto, direction: direction) }
-    }
-
-    private func looksLikeIP(_ s: String) -> Bool {
-        // Simple check — enough to enable Unblock swipe for IP rules.
-        let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
-        if t.contains(":") { return t.contains(".") == false } // rough IPv6
-        let parts = t.split(separator: ".")
-        return parts.count == 4 && parts.allSatisfy { Int($0) != nil }
     }
 }

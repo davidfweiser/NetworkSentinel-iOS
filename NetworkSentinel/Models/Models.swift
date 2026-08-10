@@ -496,6 +496,88 @@ struct FirewallRuleInfo: Codable, Identifiable {
         case protocolName = "protocol"
         case enabled, action, description
     }
+
+    /// The rule name without its `-In` / `-Out` suffix. The server writes every block as a
+    /// pair, so the base name — not the individual rule — is the thing the user blocked.
+    var baseName: String {
+        for suffix in ["-In", "-Out"] where name.lowercased().hasSuffix(suffix.lowercased()) {
+            return String(name.dropLast(suffix.count))
+        }
+        return name
+    }
+
+    /// Port and protocol of a managed port block, read back out of the server's rule name
+    /// (`FirewallService.PortRuleName`: `NetworkSentinel-Port-TCP-8080-In`). Nil for IP
+    /// blocks. This is what lets the Ports list know a listener is already blocked and
+    /// offer Unblock instead of a Block button that has nothing left to do.
+    var blockedPort: (port: Int, protocolName: String)? {
+        let parts = baseName.split(separator: "-")
+        guard parts.count == 4,
+              parts[1].caseInsensitiveCompare("Port") == .orderedSame,
+              let port = Int(parts[3])
+        else { return nil }
+        return (port, parts[2].uppercased())
+    }
+
+    var isPortRule: Bool { blockedPort != nil }
+
+    /// The address of a managed IP block, read back out of the rule name
+    /// (`FirewallService.IpRuleName`: `NetworkSentinel-IP-1.2.3.4-In`, with `:` sanitized
+    /// to `_` for IPv6). This is the normalised form `unblock` expects, so it is also what
+    /// tells a threat row its source is already blocked.
+    var blockedIPAddress: String? {
+        let parts = baseName.split(separator: "-")
+        guard parts.count == 3, parts[1].caseInsensitiveCompare("IP") == .orderedSame
+        else { return nil }
+        return parts[2].replacingOccurrences(of: "_", with: ":")
+    }
+}
+
+/// One block as the user made it: the `-In` / `-Out` rules the server writes as a pair,
+/// collapsed into a single row the way the web console's Firewall tab shows them. The
+/// server's `RemoveRule` deletes both halves whichever one is named, so listing them
+/// separately gave two rows where one removal made both disappear — which reads as the
+/// list failing to update rather than as one block being lifted.
+///
+/// Never empty: `groupedByBlock()` only creates a group around a rule it already has.
+struct FirewallRuleGroup: Identifiable {
+    let id: String
+    let rules: [FirewallRuleInfo]
+
+    var primary: FirewallRuleInfo { rules[0] }
+    var directions: [String] { rules.compactMap { $0.direction }.filter { !$0.isEmpty } }
+    var isProtected: Bool { rules.contains { $0.isProtectedRule } }
+    /// A pair with one half disabled is still blocking, so On wins over Off.
+    var isEnabled: Bool { rules.contains { $0.enabled == true } }
+}
+
+extension Array where Element == FirewallRuleInfo {
+    /// Groups `-In` / `-Out` siblings, keeping the server's ordering.
+    func groupedByBlock() -> [FirewallRuleGroup] {
+        var order: [String] = []
+        var byBase: [String: [FirewallRuleInfo]] = [:]
+        for (index, rule) in enumerated() {
+            let key = rule.baseName.isEmpty ? "rule-\(index)" : rule.baseName
+            if byBase[key] == nil { order.append(key) }
+            byBase[key, default: []].append(rule)
+        }
+        return order.compactMap { key in
+            guard let rules = byBase[key], !rules.isEmpty else { return nil }
+            return FirewallRuleGroup(id: key, rules: rules)
+        }
+    }
+
+    /// Managed port blocks keyed `"TCP/8080"`, for cross-referencing the listening ports.
+    func blockedPortKeys() -> Set<String> {
+        Set(compactMap { rule in
+            rule.blockedPort.map { "\($0.protocolName)/\($0.port)" }
+        })
+    }
+
+    /// Addresses that currently carry a managed IP block.
+    func blockedIPs() -> Set<String> {
+        Set(compactMap { $0.blockedIPAddress })
+    }
 }
 
 struct AllowlistEntry: Codable, Identifiable {

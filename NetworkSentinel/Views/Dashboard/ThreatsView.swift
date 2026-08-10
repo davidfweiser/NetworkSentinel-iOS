@@ -33,6 +33,17 @@ struct ThreatsView: View {
         return list
     }
 
+    /// Sources the server already has a block rule for. The firewall rules carry the
+    /// authoritative list; the hosts table is folded in because a threat can name an
+    /// address that has since stopped talking and dropped out of the rule listing's view.
+    private var blockedIPs: Set<String> {
+        var set = (model.state?.firewallRules ?? []).blockedIPs()
+        for host in model.state?.hosts ?? [] where host.blocked == true {
+            set.insert(host.ip)
+        }
+        return set
+    }
+
     var body: some View {
         NavigationStack {
             Group {
@@ -46,11 +57,15 @@ struct ThreatsView: View {
                     )
                 } else {
                     List {
+                        let blocked = blockedIPs
                         ForEach(threats.uniquedRows()) { row in
                             let t = row.value
-                            ThreatRow(threat: t) {
-                                Task { await model.requestBlock(ip: t.sourceIp) }
-                            }
+                            ThreatRow(
+                                threat: t,
+                                isBlocked: blocked.contains(t.sourceIp),
+                                onBlock: { Task { await model.requestBlock(ip: t.sourceIp) } },
+                                onUnblock: { Task { await model.unblock(ip: t.sourceIp) } }
+                            )
                             .listRowBackground(NSTheme.row)
                             .listRowSeparatorTint(NSTheme.border)
                         }
@@ -104,7 +119,11 @@ struct ThreatsView: View {
 
 struct ThreatRow: View {
     let threat: ThreatInfo
+    /// The source already carries a block rule, so Block would only rewrite it. The row
+    /// says so and offers the way back out instead.
+    var isBlocked: Bool = false
     var onBlock: () -> Void
+    var onUnblock: () -> Void = {}
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -151,9 +170,21 @@ struct ThreatRow: View {
                 // Host-local detections (new listener, launch item) have no peer to
                 // firewall — the server rejects loopback, so the button is only an error.
                 if threat.isBlockable {
-                    Button("Block", action: onBlock)
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(NSTheme.danger)
+                    if isBlocked {
+                        Text("BLOCKED")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(NSTheme.danger)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(NSTheme.danger.opacity(0.15), in: Capsule())
+                        Button("Unblock", action: onUnblock)
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(NSTheme.success)
+                    } else {
+                        Button("Block", action: onBlock)
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(NSTheme.danger)
+                    }
                 }
             }
         }
