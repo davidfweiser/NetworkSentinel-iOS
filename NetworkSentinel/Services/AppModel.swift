@@ -615,7 +615,9 @@ final class AppModel {
         value: String? = nil,
         kind: String? = nil,
         fieldName: String? = nil,
-        direction: String? = nil
+        direction: String? = nil,
+        rule: FirewallRuleDraft? = nil,
+        replacing: String? = nil
     ) async -> Bool {
         guard let resp = await sendAction(
             action,
@@ -623,7 +625,9 @@ final class AppModel {
             value: value,
             kind: kind,
             fieldName: fieldName,
-            direction: direction
+            direction: direction,
+            rule: rule,
+            replacing: replacing
         ) else { return false }
         return await applyActionResult(resp)
     }
@@ -638,7 +642,9 @@ final class AppModel {
         value: String? = nil,
         kind: String? = nil,
         fieldName: String? = nil,
-        direction: String? = nil
+        direction: String? = nil,
+        rule: FirewallRuleDraft? = nil,
+        replacing: String? = nil
     ) async -> ActionResponse? {
         guard let server else { return nil }
         // Set before the request, not after: a successful action refreshes, and that
@@ -942,6 +948,23 @@ final class AppModel {
     func removeRule(named name: String) async {
         _ = await runAction("remove_rule", value: name, fieldName: name)
     }
+
+    // MARK: Firewall configuration (web 0.7+)
+
+    /// Adds a rule, or replaces `replacing` when the form was opened on an existing one.
+    ///
+    /// Returns whether it took, because this one has a form behind it: a rule the server
+    /// refuses must leave the sheet open with the reason on it, not dismiss as though it
+    /// had been written. Every other action in this file can discard the result because a
+    /// banner is the whole of its feedback.
+    @discardableResult
+    func saveConfigRule(_ rule: FirewallRuleDraft, replacing: String? = nil) async -> Bool {
+        await runAction("save_config_rule", rule: rule, replacing: replacing)
+    }
+
+    /// Bandwidth accounting on the host's interfaces. Off by default on the server, and
+    /// switching it on starts the counters from nothing rather than backfilling.
+    func setTrafficMeter(_ on: Bool) async { await setSetting("trafficMeterEnabled", enabled: on) }
 
     func removeAllRules() async {
         _ = await runAction("remove_all_rules")

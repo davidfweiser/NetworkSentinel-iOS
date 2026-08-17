@@ -70,6 +70,12 @@ struct ServerState: Codable {
     let firewallRules: [FirewallRuleInfo]?
     let allowlist: [AllowlistEntry]?
     let activity: [ActivityPoint]?
+    /// Bandwidth meter — web ≥ 0.7.0. Absent on older servers and on this one when the
+    /// meter has never been switched on.
+    let traffic: TrafficInfo?
+    /// The firewall ledger in evaluation order — web ≥ 0.7.0. Distinct from
+    /// `firewallRules`, which is only the blocks this app and the engine minted.
+    let configRules: [ConfigRuleInfo]?
 }
 
 struct FirewallInfo: Codable {
@@ -92,6 +98,11 @@ struct SettingsInfo: Codable {
     let geoLookupEnabled: Bool?
     /// Present on Network Sentinel web ≥ 0.3.0
     let allowlistUseRemoteFeed: Bool?
+    /// Bandwidth accounting on the host's interfaces — present on web ≥ 0.7.0. The probe
+    /// for the `traffic` object: a server that sends this sends that.
+    let trafficMeterEnabled: Bool?
+    /// Which interfaces are being counted, or why none are.
+    let trafficStatus: String?
     /// Auth-log brute-force monitoring — present on web ≥ 0.3.3
     let authLogMonitorEnabled: Bool?
     /// Human-readable state of the auth-log watcher (which log, or why it is unavailable).
@@ -701,6 +712,300 @@ struct ActivityPoint: Codable, Identifiable {
     let connections: Int?
     let threats: Int?
     let hosts: Int?
+}
+
+// MARK: - Bandwidth meter (web ≥ 0.7.0)
+
+/// How much has moved, as against `ActivityPoint`'s how many are talking. They answer
+/// different questions and the app keeps them apart: one connection pulling a disk image is
+/// invisible to the connection count and is the whole story here.
+///
+/// Every reading arrives twice — once as a number and once as the server's own formatted
+/// string. The app draws with the numbers and *prints* the strings, because the server
+/// settled the byte convention once (SI: 1 GB is 1,000,000,000 bytes, the convention link
+/// speeds and data caps use) and a phone re-deriving it would eventually disagree with the
+/// console about the same month.
+struct TrafficInfo: Codable {
+    let enabled: Bool?
+    /// Which interfaces are counted, or why none are.
+    let status: String?
+    /// How much wall-clock the `live` series covers — `last 12 min`, `measuring…`,
+    /// `meter off`. The series carries no timestamps, so this is the only x-axis there is.
+    let window: String?
+    /// Formatted current rates, or `—` before the meter has two samples to subtract.
+    let inRate: String?
+    let outRate: String?
+    let monthLabel: String?
+    let monthIn: String?
+    let monthOut: String?
+    let monthTotal: String?
+    /// `1.2 GB per day so far` — the month divided by the days elapsed, not by the days in
+    /// the month, so it reads as a running pace rather than a forecast.
+    let monthDailyAverage: String?
+    /// Capped at 120 samples server-side, oldest first.
+    let live: [TrafficSample]?
+    /// One bucket per day of the current month.
+    let days: [TrafficBucket]?
+    /// The last 12 calendar months.
+    let months: [TrafficBucket]?
+
+    /// Whether there is a reading to show. The meter reports `enabled` separately from
+    /// having data: it is switched on the moment the setting flips, and stays empty until
+    /// it has two counter samples to subtract.
+    var hasReading: Bool {
+        guard enabled == true else { return false }
+        return !(live ?? []).isEmpty
+    }
+}
+
+/// One instant of the live series. No timestamp — the samples are evenly spaced and
+/// `TrafficInfo.window` says how far back they reach.
+struct TrafficSample: Codable {
+    let inBps: Double?
+    let outBps: Double?
+}
+
+/// Bytes in and out over one span — a calendar day on the month chart, a calendar month on
+/// the year chart.
+struct TrafficBucket: Codable, Identifiable {
+    var id: String { label }
+    let label: String
+    let bytesIn: Int64?
+    let bytesOut: Int64?
+    /// The server's formatting of the same two numbers.
+    let inText: String?
+    let outText: String?
+
+    var total: Int64 { (bytesIn ?? 0) + (bytesOut ?? 0) }
+}
+
+// MARK: - Firewall configuration (web ≥ 0.7.0)
+
+/// One rule in the firewall ledger, as the server evaluates it.
+///
+/// Distinct from `FirewallRuleInfo`, which is the narrower list of blocks this app and the
+/// prevention engine minted. This is everything, in evaluation order — engine blocks first,
+/// then the operator's own rules — so precedence is something you can see rather than infer.
+/// A permissive operator rule sitting above a block is the bug this list exists to make
+/// visible, and it is invisible in a set that leaves half the rules out.
+struct ConfigRuleInfo: Codable, Identifiable {
+    /// The rule name is the server's own handle for it — `remove_rule` and the `replace`
+    /// field of `save_config_rule` both take exactly this string.
+    var id: String { name }
+    let name: String
+    /// The operator's wording, or one the server minted from the rule's own fields.
+    let label: String?
+    /// The console's own allow rule for its listen port. The server refuses to remove or
+    /// shadow it, because doing so cuts off the request carrying the change.
+    let isProtected: Bool?
+    /// True for a rule the operator wrote, false for one the engine minted. Only a custom
+    /// rule can be edited here — an engine block is lifted by unblocking its address, not by
+    /// rewriting it.
+    let isCustom: Bool?
+    let inbound: Bool?
+    let action: String?
+    let direction: String?
+    let protocolName: String?
+    let ports: String?
+    let addresses: String?
+    /// Where the rule came from — the engine, the operator, an import.
+    let origin: String?
+    /// When an auto-block rule lapses. Empty on a rule that never expires.
+    let expiry: String?
+
+    enum CodingKeys: String, CodingKey {
+        case name, label, isProtected, isCustom, inbound, action, direction
+        case protocolName = "protocol"
+        case ports, addresses, origin, expiry
+    }
+
+    var isAllow: Bool { (action ?? "").caseInsensitiveCompare("Allow") == .orderedSame }
+    var isProtectedRule: Bool { isProtected == true }
+    var isEditable: Bool { isCustom == true && !isProtectedRule }
+
+    /// What the rule matches, in one line: `TCP 22 · 10.0.0.0/8`. The server sends
+    /// `All IPv4, All IPv6` for an unrestricted address field and an empty string for an
+    /// unrestricted port field, and "every port" is the half worth spelling out — a rule
+    /// with no port is the one that does more than it looks like it does.
+    var matchSummary: String {
+        var parts: [String] = []
+        let proto = protocolName ?? ""
+        if !proto.isEmpty && proto.caseInsensitiveCompare("Any") != .orderedSame {
+            parts.append(proto)
+        }
+        parts.append((ports ?? "").isEmpty ? "all ports" : ports!)
+        if let addresses, !addresses.isEmpty { parts.append(addresses) }
+        return parts.joined(separator: " · ")
+    }
+
+    /// The draft that opens when this rule is edited.
+    var draft: FirewallRuleDraft {
+        FirewallRuleDraft(
+            label: label ?? "",
+            action: FirewallRuleDraft.Action(serverText: action),
+            direction: FirewallRuleDraft.Direction(serverText: direction, inbound: inbound),
+            protocolName: FirewallRuleDraft.protocolMatching(protocolName),
+            ports: ports ?? "",
+            // The server's "any" placeholder is text for reading, not for typing back.
+            addresses: FirewallRuleDraft.isAnyAddress(addresses) ? "" : (addresses ?? "")
+        )
+    }
+}
+
+/// A rule being composed, and the client half of the server's validation.
+///
+/// The server is the authority — it revalidates everything and refuses anything that would
+/// cut off the console, which it can do because it knows its own listen ports and this app
+/// does not. What is mirrored here is only the purely textual part, so a typo'd port range
+/// is caught while the keyboard is still up instead of after a round trip.
+///
+/// The order matters and getting it backwards is dangerous rather than merely untidy:
+/// normalising re-renders the port field from what parsed and drops what did not, so
+/// `443-80` would come out as an empty port field — and an empty port field means *every
+/// port*. Validate what was typed, never what was normalised. The server carries the same
+/// warning over `FirewallRuleSpecs.TryPrepare`.
+struct FirewallRuleDraft: Equatable {
+    enum Action: String, CaseIterable, Identifiable {
+        case allow = "Allow"
+        case block = "Block"
+        var id: String { rawValue }
+
+        init(serverText: String?) {
+            self = (serverText ?? "").caseInsensitiveCompare("Allow") == .orderedSame ? .allow : .block
+        }
+    }
+
+    enum Direction: String, CaseIterable, Identifiable {
+        case inbound = "Inbound"
+        case outbound = "Outbound"
+        var id: String { rawValue }
+
+        /// `direction` is the display text and `inbound` the boolean; a server sends both,
+        /// so prefer the text and fall back to the flag.
+        init(serverText: String?, inbound: Bool?) {
+            if let serverText, serverText.caseInsensitiveCompare("Outbound") == .orderedSame {
+                self = .outbound
+            } else if let serverText, serverText.caseInsensitiveCompare("Inbound") == .orderedSame {
+                self = .inbound
+            } else {
+                self = (inbound ?? true) ? .inbound : .outbound
+            }
+        }
+    }
+
+    /// The server's list, in its order. `Any` is last because it is the widest.
+    static let protocols = ["TCP", "UDP", "ICMP", "Any"]
+
+    var label: String = ""
+    var action: Action = .block
+    var direction: Direction = .inbound
+    var protocolName: String = "TCP"
+    /// `22`, `8000-8001`, `80, 443`, or empty for every port.
+    var ports: String = ""
+    /// Comma-separated addresses or CIDR blocks. Empty means every address.
+    var addresses: String = ""
+
+    static func protocolMatching(_ raw: String?) -> String {
+        let text = (raw ?? "").trimmingCharacters(in: .whitespaces)
+        return protocols.first { $0.caseInsensitiveCompare(text) == .orderedSame } ?? "TCP"
+    }
+
+    /// The words the server treats as "every address", so the field can be left blank
+    /// without the app sending back a literal `All IPv4, All IPv6` for it to re-parse.
+    private static let anyAddressWords: Set<String> = [
+        "", "any", "anywhere", "all", "all ipv4", "all ipv6", "all ipv4, all ipv6",
+        "0.0.0.0/0", "::/0"
+    ]
+
+    static func isAnyAddress(_ raw: String?) -> Bool {
+        anyAddressWords.contains((raw ?? "").trimmingCharacters(in: .whitespaces).lowercased())
+    }
+
+    /// Nil when the draft is worth sending; the reason when it is not.
+    var validationError: String? {
+        if let error = Self.portError(ports) { return error }
+        if let error = Self.addressError(addresses) { return error }
+
+        let hasPorts = !ports.trimmingCharacters(in: .whitespaces).isEmpty
+        if hasPorts && protocolName.caseInsensitiveCompare("ICMP") == .orderedSame {
+            return "ICMP has no ports — clear the port range or pick TCP/UDP."
+        }
+
+        // The one shape that is always a mistake: a pass rule with no protocol, no port and
+        // no address punches a hole for everything.
+        if action == .allow, protocolName.caseInsensitiveCompare("Any") == .orderedSame,
+           !hasPorts, Self.isAnyAddress(addresses) {
+            return "An Allow rule with protocol Any, no port and no address would allow all traffic. "
+                 + "Set a port, a protocol, or an address."
+        }
+
+        return nil
+    }
+
+    /// True when the rule matches every address and every port in its direction. The server
+    /// refuses a *block* shaped like this outright — it would take the machine off the
+    /// network, this console with it — so saying so before the round trip is the difference
+    /// between a warning and a rejection.
+    var isCatchAll: Bool {
+        ports.trimmingCharacters(in: .whitespaces).isEmpty
+            && Self.isAnyAddress(addresses)
+            && protocolName.caseInsensitiveCompare("Any") == .orderedSame
+    }
+
+    private static func portError(_ raw: String) -> String? {
+        let text = raw.trimmingCharacters(in: .whitespaces)
+        if text.isEmpty { return nil }
+
+        for token in text.split(separator: ",").map({ $0.trimmingCharacters(in: .whitespaces) })
+        where !token.isEmpty {
+            // `8000-8001` and `8000:8001` are the two forms the server accepts. A separator
+            // at either end (`-80`) splits to a single valid-looking bound, so it has to be
+            // refused before the split rather than after it.
+            let isSeparator: (Character) -> Bool = { $0 == "-" || $0 == ":" }
+            guard let first = token.first, let last = token.last,
+                  !isSeparator(first), !isSeparator(last)
+            else { return "Invalid port: \(token)" }
+
+            let bounds = token.split(whereSeparator: isSeparator)
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+            guard bounds.count <= 2, !bounds.isEmpty,
+                  bounds.allSatisfy({ !$0.isEmpty && $0.count <= 5 && $0.allSatisfy(\.isNumber) })
+            else { return "Invalid port: \(token)" }
+
+            let numbers = bounds.compactMap { Int($0) }
+            guard numbers.count == bounds.count, numbers.allSatisfy({ (1...65535).contains($0) })
+            else { return "Port out of range: \(token)" }
+            if numbers.count == 2, numbers[0] > numbers[1] {
+                return "Port range starts after it ends: \(token)"
+            }
+        }
+        return nil
+    }
+
+    private static func addressError(_ raw: String) -> String? {
+        if isAnyAddress(raw) { return nil }
+
+        for token in raw.split(separator: ",").map({ $0.trimmingCharacters(in: .whitespaces) })
+        where !token.isEmpty {
+            if anyAddressWords.contains(token.lowercased()) { continue }
+
+            guard token.contains("/") else {
+                // `IPScope` already parses both families the way the server does, down to
+                // the IPv4-mapped IPv6 form. Reusing it keeps one address parser in the app.
+                if IPScope.of(token) == .notAnAddress { return "Invalid address: \(token)" }
+                continue
+            }
+
+            let parts = token.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: false)
+            guard parts.count == 2 else { return "Invalid network: \(token)" }
+            let address = parts[0].trimmingCharacters(in: .whitespaces)
+            guard IPScope.of(address) != .notAnAddress,
+                  let prefix = Int(parts[1].trimmingCharacters(in: .whitespaces)),
+                  prefix >= 0, prefix <= (address.contains(":") ? 128 : 32)
+            else { return "Invalid network: \(token)" }
+        }
+        return nil
+    }
 }
 
 // MARK: - Unique list IDs

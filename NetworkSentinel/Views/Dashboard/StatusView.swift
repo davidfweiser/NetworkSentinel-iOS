@@ -72,6 +72,7 @@ struct StatusView: View {
                     decisionCard.nsAsleepDimmed(asleep)
                     queueChips.nsAsleepDimmed(asleep)
                     instrumentPanel.nsAsleepDimmed(asleep)
+                    trafficCard.nsAsleepDimmed(asleep)
                     controlRow
                     destinationRows
                     footnote
@@ -92,6 +93,7 @@ struct StatusView: View {
             .navigationDestination(for: StatusDestination.self) { destination in
                 switch destination {
                 case .detection: DetectionView()
+                case .dataFlow: DataFlowView()
                 }
             }
             .sheet(isPresented: $showEnforcement) {
@@ -445,6 +447,23 @@ struct StatusView: View {
         .accessibilityElement(children: .combine)
     }
 
+    // MARK: - Data flow (web 0.7+)
+    //
+    // Under the instruments rather than in them: the counts above are all cardinalities and
+    // this is a rate, so it does not belong in a row of four numbers that share a unit. Drawn
+    // only when the server reports a meter at all, which is what keeps a 0.6 server's Status
+    // screen exactly as it was.
+
+    @ViewBuilder
+    private var trafficCard: some View {
+        if let traffic = model.state?.traffic {
+            NavigationLink(value: StatusDestination.dataFlow) {
+                TrafficMeterCard(traffic: traffic)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
     // MARK: - Controls
 
     private var controlRow: some View {
@@ -635,4 +654,5 @@ struct StatusView: View {
 /// more screens move off this one.
 enum StatusDestination: Hashable {
     case detection
+    case dataFlow
 }

@@ -498,6 +498,30 @@ struct MoreView: View {
                 }
             }
         }
+
+        // Web 0.7+. A second section rather than a row in the one above, because it is a
+        // different list of a different thing — the section above is the blocks the engine
+        // and this app minted, and Firewall Config is every rule the firewall evaluates.
+        // Folding them together is what would make a permissive rule above a block invisible.
+        // Nested here so the List keeps room under ViewBuilder's ten-child limit.
+        if let configRules = model.state?.configRules {
+            Section {
+                NavigationLink {
+                    FirewallConfigView()
+                } label: {
+                    HStack {
+                        Label("Firewall Config", systemImage: "list.bullet.rectangle")
+                        Spacer(minLength: 8)
+                        Text("\(configRules.count)")
+                            .font(.caption.monospaced())
+                            .foregroundStyle(NSTheme.muted)
+                    }
+                }
+                .listRowBackground(NSTheme.row)
+            } footer: {
+                Text("Every rule the firewall evaluates, in the order it evaluates them — engine blocks first, then rules you configure. Add, edit and remove them here.")
+            }
+        }
     }
 
     @ViewBuilder

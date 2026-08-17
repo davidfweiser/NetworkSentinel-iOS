@@ -161,7 +161,11 @@ actor APIClient {
     }
 
     /// POST `/api/action` — matches Network Sentinel web 0.3+ `ActionRequest`
-    /// (`action`, `ip`, `value`, `name`, `kind`, `direction`).
+    /// (`action`, `ip`, `value`, `name`, `kind`, `direction`), plus the 0.7+ config-rule
+    /// fields (`label`, `ruleAction`, `protocol`, `ports`, `addresses`, `replace`).
+    ///
+    /// A rule carries six fields at once, which is why 0.7 gave them their own slots rather
+    /// than overloading `value`/`kind` — the server says as much in its own DTO.
     func action(
         baseURL: String,
         token: String?,
@@ -170,7 +174,9 @@ actor APIClient {
         value: String? = nil,
         kind: String? = nil,
         fieldName: String? = nil,
-        direction: String? = nil
+        direction: String? = nil,
+        rule: FirewallRuleDraft? = nil,
+        replacing: String? = nil
     ) async throws -> ActionResponse {
         let url = try url(base: baseURL, path: "/api/action")
         var body: [String: String] = ["action": action]
@@ -181,6 +187,19 @@ actor APIClient {
         if let kind, !kind.isEmpty { body["kind"] = kind }
         if let fieldName, !fieldName.isEmpty { body["name"] = fieldName }
         if let direction, !direction.isEmpty { body["direction"] = direction }
+
+        if let rule {
+            body["label"] = rule.label.trimmingCharacters(in: .whitespacesAndNewlines)
+            body["ruleAction"] = rule.action.rawValue
+            body["direction"] = rule.direction.rawValue
+            body["protocol"] = rule.protocolName
+            // Both sent even when empty — empty means "every port" and "every address" to
+            // the server, which is a rule shape, not a missing field.
+            body["ports"] = rule.ports.trimmingCharacters(in: .whitespacesAndNewlines)
+            body["addresses"] = rule.addresses.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        // Only on an edit. Omitted, the server adds a rule instead of replacing one.
+        if let replacing, !replacing.isEmpty { body["replace"] = replacing }
 
         var req = request(url: url, method: "POST", token: token)
         req.httpBody = try encoder.encode(body)

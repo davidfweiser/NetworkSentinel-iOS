@@ -17,19 +17,22 @@ Connect to one or more hosts running the headless web UI (`-w` / `--web`), sign 
 | **VPN peers** | WireGuard peer monitoring, per-peer transfer threshold, and the read-only peer table (web 0.6+) |
 | **Signatures** | Suricata EVE ingestion — feed path, maximum severity, muted signature ids (web 0.6+) |
 | **Threats** | Severity filters, search, clear alerts, block source IP — each row saying whether that IP is actually blocked (web 0.6.3+) |
+| **Data flow** | Bandwidth meter on Status: live in/out rates, this month a day at a time, the year a month at a time (web 0.7+) |
+| **Firewall Config** | Every rule the firewall evaluates, in evaluation order, with add / edit / remove (web 0.7+) |
 | **Hosts** | Remote peers with geo/threat badges; swipe to block/unblock |
 | **Connections** | Live process + endpoint table; block remote peers |
 | **More** | Listening ports, firewall rules, allowlist add/remove/refresh, server webhook URL, HTTPS + DuckDNS remote access and certificate issuance, change master password |
 | **Alerts** | Time-sensitive notifications and in-app popups for Critical threats, leading with whether the address was blocked (web 0.6.3+), with catch-up on launch |
 | **Secure storage** | Session tokens & optional remembered passwords in Keychain |
 
-Talks to the same JSON API as the browser console (Linux, Windows & macOS web **0.3.x – 0.6.x**, current through **0.6.3**):
+Talks to the same JSON API as the browser console (Linux, Windows & macOS web **0.3.x – 0.7.x**, current through **0.7.2**):
 
 - `GET /api/auth/status`
 - `POST /api/auth/login` · `/api/auth/setup` · `/api/auth/logout`
 - `POST /api/auth/change-password` (0.3.2+) — `currentPassword`, `newPassword`, `confirm`
-- `GET /api/state` (settings include `geoLookupEnabled` / `allowlistUseRemoteFeed` / `authLogMonitorEnabled` + `authLogStatus` / `probeLogEnabled` + `probeLogStatus` / `criticalAlertsEnabled`, on 0.4+ the intrusion-detection group, on 0.5+ the HTTPS/DuckDNS group, and on 0.6+ `preventionDryRun` / `conntrackEventsEnabled` / the DNS, WireGuard and Suricata groups, on 0.6.3+ `autoBlockSummary`; threats include `ts` and on 0.6.3+ `blockStatus` / `blockShort` / `blocked`; rules include `isProtected`, `address`, `ports`)
+- `GET /api/state` (settings include `geoLookupEnabled` / `allowlistUseRemoteFeed` / `authLogMonitorEnabled` + `authLogStatus` / `probeLogEnabled` + `probeLogStatus` / `criticalAlertsEnabled`, on 0.4+ the intrusion-detection group, on 0.5+ the HTTPS/DuckDNS group, and on 0.6+ `preventionDryRun` / `conntrackEventsEnabled` / the DNS, WireGuard and Suricata groups, on 0.6.3+ `autoBlockSummary`, on 0.7+ `trafficMeterEnabled` + `trafficStatus`; threats include `ts` and on 0.6.3+ `blockStatus` / `blockShort` / `blocked`; rules include `isProtected`, `address`, `ports`; on 0.7+ the top-level `traffic` and `configRules`)
 - `POST /api/action` — `block`, `unblock`, `set_setting`, `block_port`, `unblock_port`, `remove_rule`, `remove_all_rules`, allowlist, auto-block, …
+- `POST /api/action` — `save_config_rule` (web 0.7+) — `label`, `ruleAction`, `direction`, `protocol`, `ports`, `addresses`, and `replace` when editing rather than adding
 - `POST /api/action` — `sleep` / `wake` (web 0.5.1+), falling back to the `pause` / `resume` names every 0.3–0.5.0 server drives the same monitor state under
 - `POST /api/action` — `issue_cert` (web 0.5+)
 
@@ -102,6 +105,24 @@ The verdict is deliberately left off the host-local detections. The server does 
 **Auto-block has three states, not two.** The Dashboard control now reads **Auto-block off** / **Auto-block dry run** (amber) / **Auto-block on** (red), rather than showing a red "on" over an engine that is deliberately writing no rules. 0.6.3 publishes the engine's own `autoBlockSummary` for exactly this reason — every frontend used to rebuild that string and every one of them dropped dry run. The app keeps the button compact because the minimum level sits in its own chip beside it; the engine's full sentence still arrives in the status header the moment the toggle flips, and VoiceOver reads it from the button.
 
 Servers older than 0.6.3 send none of these fields, so every badge, sentence and Unblock swap simply does not appear — the app behaves exactly as it did before.
+
+### Data flow and Firewall Config (0.7.0 – 0.7.2)
+
+0.7 added two readings the app had no equivalent for. Both appear only when the server sends them, so a 0.6 server's screens are unchanged.
+
+**Data flow.** A bandwidth meter, on Status under the instrument panel. The counts in that panel are all cardinalities — connections, hosts, ports — and none of them move when one connection pulls a disk image at line rate; this is the reading that does. The card gives the live in/out rates and the month total, and opens onto three charts at coarsening time bases: the live window, this month a day at a time, and the last twelve months. They are separate charts rather than one zoomable one because they answer separate questions — *is something happening now*, *was yesterday unusual*, *are we going to blow through the cap* — and the middle one is unreadable at either of the other two scales.
+
+Every figure is printed as the server formatted it. The server settled the byte convention once (SI, where 1 GB is 1,000,000,000 bytes — what link speeds and data caps use) and a phone re-deriving it would eventually disagree with the console about the same month. The raw numbers are used only to draw. Switching the meter on starts the counters from zero, which the toggle says out loud: turning it on to answer a question about last week cannot work, and the empty chart afterwards would otherwise look like a fault.
+
+**Firewall Config.** Every rule the firewall evaluates, in the order it evaluates them, under More. This is not the existing *Firewall rules* list and the difference is the point: that one is the blocks this app and the prevention engine minted, which is the set you act on during an incident. This one is everything, engine blocks first and then the operator's own rules. A permissive rule sitting above a block is the misconfiguration the screen exists to make visible, and it is invisible in any list that leaves half the rules out. The order is therefore never re-sorted — not by name, not by action, not to group the editable ones.
+
+Rules can be added, edited and removed. Only a rule the operator wrote is editable: an engine block is lifted by unblocking its address, not by rewriting the rule under it, which would leave the engine believing it still holds a block it no longer has. The console's own allow rule is marked and cannot be removed from here.
+
+**The server owns validation, and the form mirrors only part of it.** `save_config_rule` revalidates everything, and the guard against writing a rule that cuts off the console stays server-side because only the server knows which ports it listens on. What the form checks locally is the purely textual half — port tokens, ranges, addresses and CIDR blocks — so a typo is caught while the keyboard is still up. Two shapes are refused before sending: an Allow rule with protocol Any, no port and no address (which allows everything), and an inbound catch-all Block (which takes the machine off the network, this app's connection with it). A refusal from the server leaves the sheet open with its own wording on it; dismissing would look exactly like a rule that had been written.
+
+Validation order matters and reversing it is dangerous rather than untidy: normalising re-renders the port field from what parsed and drops what did not, so `443-80` would come out as an empty port field — and an empty port field means *every port*. What was typed is validated, never what was normalised. The server carries the same warning over `FirewallRuleSpecs.TryPrepare`.
+
+0.7.2's upgrade banner is deliberately not ported. It fixes a browser-only problem — an open tab keeps the markup it was served, so a console upgraded underneath it silently lacks the new UI. The app re-decodes `/api/state` on every poll and has no stale markup to reconcile.
 
 ### Sleep / Wake
 
