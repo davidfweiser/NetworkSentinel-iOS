@@ -1,53 +1,53 @@
 import SwiftUI
 
-/// The firewall ledger — web 0.7's Firewall Config tab.
+/// The host firewall — web 0.7's Firewall Config tab, as 0.7.3 rewrote it.
 ///
 /// This is not the same list as More's *Firewall rules*, and the difference is the point.
 /// That one is the blocks this app and the prevention engine minted, which is the set you act
-/// on during an incident. This one is *everything the firewall will evaluate*, in the order it
-/// evaluates it: engine blocks first, then the operator's own rules. A permissive rule sitting
-/// above a block is the misconfiguration this screen exists to make visible, and it is
-/// invisible in any list that leaves half the rules out.
+/// on during an incident. This one is *the firewall*: on web 0.7.3 the server reads
+/// `ufw status verbose`, `nft -j list ruleset`, `iptables -S` and `ss -tulpnH` and folds UFW's
+/// rules, WireGuard's, Docker's and this app's into a single list. One machine has one
+/// firewall, and before 0.7.3 both front-ends showed a fraction of it and called it the whole.
 ///
-/// Order is therefore never re-sorted here — not by name, not by action, not to put the
-/// editable ones together. The server sends evaluation order and evaluation order is the
-/// reading.
+/// Order within a direction is never re-sorted — not by name, not by action, not to put the
+/// editable rules together. The server sends evaluation order and evaluation order is the
+/// reading: a permissive rule sitting above a block is the misconfiguration this screen exists
+/// to make visible. Inbound and Outbound are separated because they are separate chains, which
+/// is how the server sends them and how the web console has always shown them.
+///
+/// The listeners at the bottom are the other half of the same question. A rule list says what
+/// the firewall would do; a listener list says what is actually accepting connections. Neither
+/// alone tells you whether a port is reachable.
 struct FirewallConfigView: View {
     @Environment(AppModel.self) private var model
 
     @State private var editing: EditorTarget?
     @State private var pendingRemoval: ConfigRuleInfo?
+    @State private var rescanning = false
 
     /// What the editor sheet was opened for. `rule` is nil when adding.
     struct EditorTarget: Identifiable {
         let rule: ConfigRuleInfo?
-        var id: String { rule?.name ?? "" }
+        /// The rule's own identity, which on 0.7.3 is its shape rather than its name — two
+        /// UFW rules can share a name, and opening the editor on the wrong one of them would
+        /// silently rewrite the other.
+        var id: String { rule?.id ?? "new" }
     }
 
     private var rules: [ConfigRuleInfo] { model.state?.configRules ?? [] }
+    private var inbound: [ConfigRuleInfo] { rules.filter { $0.inbound ?? true } }
+    private var outbound: [ConfigRuleInfo] { rules.filter { !($0.inbound ?? true) } }
+    private var listeners: [HostListener] { model.state?.listeners ?? [] }
+    /// Absent on web 0.7.0–0.7.2, where `configRules` is this app's ledger and there is no
+    /// host-wide reading to report.
+    private var host: HostFirewallInfo? { model.state?.hostFirewall }
 
     var body: some View {
         List {
-            Section {
-                if rules.isEmpty {
-                    Text("No firewall rules configured")
-                        .foregroundStyle(NSTheme.muted)
-                        .listRowBackground(NSTheme.row)
-                } else {
-                    ForEach(rules) { rule in
-                        row(rule)
-                    }
-                }
-            } header: {
-                Text("Evaluation order")
-            } footer: {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Rules are matched top to bottom. Blocks the engine wrote come first, then rules configured here.")
-                    if let priv = model.state?.firewall?.privilegeText, !priv.isEmpty {
-                        Text(priv)
-                    }
-                }
-            }
+            hostSection
+            rulesSection("Inbound", inbound)
+            rulesSection("Outbound", outbound)
+            listenersSection
         }
         .scrollContentBackground(.hidden)
         .background { AmbientField() }
@@ -78,19 +78,141 @@ struct FirewallConfigView: View {
             titleVisibility: .visible
         ) {
             Button("Remove", role: .destructive) {
-                if let name = pendingRemoval?.name {
-                    Task { await model.removeRule(named: name) }
+                if let rule = pendingRemoval {
+                    Task { await remove(rule) }
                 }
                 pendingRemoval = nil
             }
             Button("Cancel", role: .cancel) { pendingRemoval = nil }
         } message: {
-            Text("The rule stops being evaluated immediately. Traffic it was matching falls through to whatever rule comes next.")
+            Text(pendingRemoval.map(removalWarning) ?? "")
         }
         .refreshable { await model.refresh(silent: false) }
     }
 
-    // MARK: - Row
+    // MARK: - The firewall itself
+
+    /// What the scan found the machine to be. Read this before the rules: an Allow rule means
+    /// something different under a default of Drop than under a default of Accept, and a short
+    /// list on an unprivileged server is a privilege problem rather than an empty firewall.
+    @ViewBuilder
+    private var hostSection: some View {
+        if let host {
+            Section {
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(host.isEnabled ? NSTheme.success : NSTheme.warning)
+                        .frame(width: 8, height: 8)
+                    Text(host.headline)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(NSTheme.text)
+                    Spacer(minLength: 0)
+                }
+                .listRowBackground(NSTheme.row)
+
+                LabeledContent {
+                    Text(host.defaultInbound ?? "?")
+                        .font(.caption.monospaced())
+                        .foregroundStyle(host.dropsInboundByDefault ? NSTheme.success : NSTheme.warning)
+                } label: {
+                    Text("Default inbound").foregroundStyle(NSTheme.text)
+                }
+                .listRowBackground(NSTheme.row)
+
+                LabeledContent {
+                    Text(host.defaultOutbound ?? "?")
+                        .font(.caption.monospaced())
+                        .foregroundStyle(NSTheme.muted)
+                } label: {
+                    Text("Default outbound").foregroundStyle(NSTheme.text)
+                }
+                .listRowBackground(NSTheme.row)
+
+                Button {
+                    Task { await rescan() }
+                } label: {
+                    HStack {
+                        Label(rescanning ? "Rescanning…" : "Rescan firewall",
+                              systemImage: "arrow.clockwise")
+                        Spacer(minLength: 0)
+                        if let at = host.scannedAt, !at.isEmpty, !rescanning {
+                            Text(at)
+                                .font(.caption.monospaced())
+                                .foregroundStyle(NSTheme.muted)
+                        }
+                    }
+                }
+                .disabled(rescanning)
+                .tint(NSTheme.accent)
+                .listRowBackground(NSTheme.row)
+            } header: {
+                Text("Host firewall")
+            } footer: {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(defaultPolicySentence(host))
+                    // The scan is cached on the server so the 2.5s poll does not shell out to
+                    // ufw and nft four times a second. Pulling to refresh re-reads state, not
+                    // the kernel — Rescan is the one that does.
+                    Text("Pull to refresh re-reads the server's cached scan. Rescan re-reads the kernel.")
+                    if let note = host.privilegeNote, !note.isEmpty {
+                        Text(note).foregroundStyle(NSTheme.warning)
+                    }
+                    if let errors = host.errors, !errors.isEmpty {
+                        ForEach(errors, id: \.self) { Text($0).foregroundStyle(NSTheme.danger) }
+                    }
+                    if let seen = host.backendsSeen, seen.count > 1 {
+                        // Rules under a backend that is not the active one still exist; they
+                        // are just not what decides the traffic.
+                        Text("Also present: \(seen.joined(separator: ", ")).")
+                    }
+                }
+            }
+        }
+    }
+
+    /// The one sentence that changes how every Allow row below should be read.
+    private func defaultPolicySentence(_ host: HostFirewallInfo) -> String {
+        let policy = "Default policy: \(host.defaultInbound ?? "?") inbound, \(host.defaultOutbound ?? "?") outbound. "
+        let meaning = host.dropsInboundByDefault
+            ? "Inbound traffic no rule matches is dropped, so a service is reachable only if a rule admits it. "
+            : "Inbound traffic no rule matches is accepted, so an Allow rule opens a path through the rules above it rather than granting access on its own. "
+        return policy + meaning + "Rules match in order, first match wins."
+    }
+
+    // MARK: - Rules
+
+    @ViewBuilder
+    private func rulesSection(_ title: String, _ list: [ConfigRuleInfo]) -> some View {
+        Section {
+            if list.isEmpty {
+                Text("No \(title.lowercased()) rules")
+                    .foregroundStyle(NSTheme.muted)
+                    .listRowBackground(NSTheme.row)
+            } else {
+                ForEach(list) { rule in
+                    row(rule)
+                }
+            }
+        } header: {
+            HStack {
+                Text(title)
+                Spacer()
+                Text("\(list.count)")
+            }
+        } footer: {
+            // Said once, under the second list rather than under each.
+            if title == "Outbound" {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(host == nil
+                         ? "Blocks the engine wrote come first, then rules configured here. Addresses are sources on an inbound rule, destinations on an outbound one."
+                         : "Every rule on the host, whoever wrote it. Addresses are sources on an inbound rule, destinations on an outbound one.")
+                    if let priv = model.state?.firewall?.privilegeText, !priv.isEmpty {
+                        Text(priv)
+                    }
+                }
+            }
+        }
+    }
 
     @ViewBuilder
     private func row(_ rule: ConfigRuleInfo) -> some View {
@@ -136,13 +258,15 @@ struct FirewallConfigView: View {
                 .foregroundStyle(NSTheme.accent)
 
                 if let origin = rule.origin, !origin.isEmpty {
+                    // Who wrote it. On 0.7.3 this is the column that separates our own rules
+                    // from UFW's and Docker's, so it is worth more than grey on a foreign row.
                     Text(origin)
                         .font(.caption2)
-                        .foregroundStyle(NSTheme.muted)
+                        .foregroundStyle(rule.isForeignRule ? NSTheme.signal : NSTheme.muted)
                         .lineLimit(1)
                 }
 
-                if let expiry = rule.expiry, !expiry.isEmpty {
+                if let expiry = rule.expiry, !expiry.isEmpty, expiry != "Permanent" {
                     Label(expiry, systemImage: "clock")
                         .font(.caption2)
                         .foregroundStyle(NSTheme.warning)
@@ -156,9 +280,6 @@ struct FirewallConfigView: View {
         .listRowBackground(NSTheme.row)
         .contentShape(.rect)
         .onTapGesture {
-            // Only a rule the operator wrote can be edited. An engine block is lifted by
-            // unblocking its address, not by rewriting the rule underneath it — editing one
-            // here would leave the engine believing it still holds a block it no longer has.
             if rule.isEditable { editing = EditorTarget(rule: rule) }
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: !rule.isProtectedRule) {
@@ -178,6 +299,116 @@ struct FirewallConfigView: View {
                 .tint(NSTheme.accent)
             }
         }
+    }
+
+    // MARK: - Listeners
+
+    /// What is accepting connections, and whether the rules above let anyone reach it.
+    ///
+    /// A listener bound to every interface that the firewall does not admit is fine; the same
+    /// listener with nothing covering it is the row this list exists for.
+    @ViewBuilder
+    private var listenersSection: some View {
+        if !listeners.isEmpty {
+            Section {
+                ForEach(listeners) { listener in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 6) {
+                            Text(listener.process ?? "—")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(NSTheme.text)
+                                .lineLimit(1)
+                            Spacer(minLength: 6)
+                            Text(listener.covered ?? "Unknown")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(exposureColor(listener.exposure))
+                        }
+                        HStack(spacing: 8) {
+                            Text("\(listener.protocolName ?? "TCP") \(listener.port ?? "")")
+                                .font(.caption.monospaced())
+                                .foregroundStyle(NSTheme.accent)
+                            if let service = listener.service, !service.isEmpty {
+                                Text(service)
+                                    .font(.caption2)
+                                    .foregroundStyle(NSTheme.muted)
+                                    .lineLimit(1)
+                            }
+                            Spacer(minLength: 0)
+                            Text(listener.address ?? "")
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(NSTheme.muted)
+                                .lineLimit(1)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                    .listRowBackground(NSTheme.row)
+                }
+            } header: {
+                HStack {
+                    Text("Listening")
+                    Spacer()
+                    Text("\(listeners.count)")
+                }
+            } footer: {
+                Text("What is accepting connections, and what the inbound rules do to traffic arriving at it. Open means reachable from anywhere; Local only means bound to this machine; Not allowed means nothing admits it, however loudly it is listening.")
+            }
+        }
+    }
+
+    private func exposureColor(_ exposure: HostListener.Exposure) -> Color {
+        switch exposure {
+        // Open is not a fault — a web server is meant to be reachable — but it is the row to
+        // read first, so it is the one that carries colour.
+        case .open: return NSTheme.warning
+        case .restricted: return NSTheme.success
+        case .closed: return NSTheme.muted
+        case .none: return NSTheme.danger
+        case .unknown: return NSTheme.muted
+        }
+    }
+
+    // MARK: - Actions
+
+    private func rescan() async {
+        rescanning = true
+        await model.rescanFirewall()
+        // The rescan invalidates the server's cache; this is the read that picks up the
+        // result, since the action's own reply carries only a summary line.
+        await model.refresh(silent: true)
+        rescanning = false
+    }
+
+    /// Removes through whichever door the rule came in by, which is a question only the
+    /// server can answer. A UFW rule has no entry in this app's ledger, so `remove_rule`
+    /// would look it up by name and find nothing; `delete_host_rule` takes the shape and
+    /// routes it — back through the ledger for one of ours, out through `ufw delete` or
+    /// `nft delete rule … handle` for anyone else's.
+    private func remove(_ rule: ConfigRuleInfo) async {
+        if rule.hasHostKey, let key = rule.key {
+            await model.deleteHostRule(key: key)
+        } else {
+            // Pre-0.7.3: the list is this app's ledger and the name is the handle.
+            await model.removeRule(named: rule.name)
+        }
+    }
+
+    /// What is about to happen, in the terms that matter for this particular rule.
+    private func removalWarning(_ rule: ConfigRuleInfo) -> String {
+        var text = "The rule stops being evaluated immediately. Traffic it was matching falls through to whatever rule comes next."
+
+        if rule.isForeignRule {
+            text += "\n\nThis rule belongs to \(rule.origin ?? "the host"), not to Network Sentinel. Removing it takes it out of the host firewall for good."
+        } else if rule.isCustom != true, let origin = rule.origin, !origin.isEmpty {
+            text += "\n\nThis rule came from \(origin.lowercased()). Removing it unblocks that traffic until something detects it again."
+        }
+
+        // Removing the rule that admits SSH can end the session the machine is administered
+        // over, and the app cannot undo that from here.
+        if rule.isAllow, rule.matchesSSH {
+            text += "\n\nThis is the rule that allows SSH — removing it can end the session you administer this host with."
+        }
+
+        return text + "\n\nRequires root or pkexec/sudo on the server."
     }
 }
 
@@ -219,9 +450,28 @@ struct FirewallRuleEditor: View {
 
     private var blocker: String? { validationError ?? selfBlockRefusal }
 
+    /// Editing a rule the host owns is not an edit. UFW has no in-place rewrite, so the server
+    /// deletes the original where it lives and writes these values as a new rule — which means
+    /// the rule changes position in evaluation order, and a failed write leaves neither.
+    private var foreignEditNote: String? {
+        guard let rule, rule.isForeignRule else { return nil }
+        return "“\(rule.label ?? rule.name)” was created by \(rule.origin ?? "another tool"). "
+             + "Saving removes it there and writes these values as a new rule — UFW has no in-place "
+             + "edit, so that is what editing one means here."
+    }
+
     var body: some View {
         NavigationStack {
             List {
+                if let foreignEditNote {
+                    Section {
+                        Label(foreignEditNote, systemImage: "arrow.triangle.swap")
+                            .font(.system(size: 12))
+                            .foregroundStyle(NSTheme.signal)
+                            .listRowBackground(NSTheme.row)
+                    }
+                }
+
                 Section {
                     TextField("Label", text: $draft.label)
                         .foregroundStyle(NSTheme.text)
@@ -324,9 +574,16 @@ struct FirewallRuleEditor: View {
         guard blocker == nil else { return }
         saving = true
         serverError = nil
-        // `replace` is the old rule's name: the server removes that one and writes this in
-        // its place, which is what keeps an edit from silently becoming a second rule.
-        let ok = await model.saveConfigRule(draft, replacing: rule?.name)
+        // Which handle identifies the original decides how the server replaces it. One of ours
+        // goes by name through the ledger; one the host owns goes by shape, because its name is
+        // not unique and the ledger has never heard of it. Sending both would be a name lookup
+        // the server would fail before it ever reached the shape.
+        let ok: Bool
+        if let rule, rule.isForeignRule, rule.hasHostKey {
+            ok = await model.saveConfigRule(draft, ruleKey: rule.key)
+        } else {
+            ok = await model.saveConfigRule(draft, replacing: rule?.name)
+        }
         saving = false
         if ok {
             dismiss()

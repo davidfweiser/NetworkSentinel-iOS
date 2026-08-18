@@ -75,7 +75,121 @@ struct ServerState: Codable {
     let traffic: TrafficInfo?
     /// The firewall ledger in evaluation order — web ≥ 0.7.0. Distinct from
     /// `firewallRules`, which is only the blocks this app and the engine minted.
+    ///
+    /// On web ≥ 0.7.3 this is no longer a ledger but a scan of the whole host firewall —
+    /// UFW's rules, WireGuard's, Docker's and this app's, in one list. The shape is
+    /// unchanged, so a 0.7.0–0.7.2 server still decodes; what changes is how much of the
+    /// machine it describes, and that a row may now belong to something else entirely.
     let configRules: [ConfigRuleInfo]?
+    /// What the scan found the host firewall to *be* — backend, status, default policies —
+    /// web ≥ 0.7.3. Absent on older servers, where `configRules` is the app's own ledger and
+    /// there is no host-wide reading to report.
+    let hostFirewall: HostFirewallInfo?
+    /// Every socket accepting connections on the host, and whether the firewall admits it —
+    /// web ≥ 0.7.3. Distinct from `ports`, which is the monitor's own view of listening
+    /// ports and says nothing about whether they are reachable.
+    let listeners: [HostListener]?
+}
+
+/// The host firewall as one reading — web ≥ 0.7.3.
+///
+/// Before 0.7.3 the Firewall Config screen showed this app's ledger and nothing else, which
+/// on a UFW box is a near-empty page sitting beside a firewall full of rules. The server now
+/// reads `ufw status verbose`, `nft -j list ruleset`, `iptables -S` and `ss -tulpnH` and
+/// folds them into one list. This is the header for that list: which backend actually owns
+/// the machine, whether it is switched on, and what happens to traffic no rule matches.
+///
+/// The reads are inspections, so a server without elevation still answers — with a short
+/// list and a `privilegeNote` saying that is why. A short list is not the same as an empty
+/// firewall and the two must not be shown as though they were.
+struct HostFirewallInfo: Codable {
+    /// The machine. The firewall is named after the host it protects, not after this app.
+    let host: String?
+    /// "UFW", "nftables", "iptables" or "none".
+    let backend: String?
+    let status: String?
+    let enabled: Bool?
+    /// What the chain does with inbound traffic no rule matched — "Accept", "Drop", "Reject".
+    /// The whole meaning of an Allow rule hangs on this: under a default of Drop an Allow is
+    /// what makes a service reachable at all, under Accept it only opens a path through the
+    /// rules above it.
+    let defaultInbound: String?
+    let defaultOutbound: String?
+    let description: String?
+    /// What could not be read, and what would fix it. Empty when the scan saw everything.
+    let privilegeNote: String?
+    /// "12 Inbound · 3 Outbound", or "No rules".
+    let rulesSummary: String?
+    /// Every backend that answered, not just the one that owns the host — a box can have
+    /// nftables rules underneath an active UFW.
+    let backendsSeen: [String]?
+    let errors: [String]?
+    /// Local time of the scan, `HH:mm:ss`. The scan is cached server-side, so this is how
+    /// old the list is — it is not the poll time.
+    let scannedAt: String?
+
+    var isEnabled: Bool { enabled == true }
+
+    /// True when inbound traffic matching nothing is dropped. The default when the server
+    /// says nothing is the safe reading, not the permissive one.
+    var dropsInboundByDefault: Bool {
+        (defaultInbound ?? "").caseInsensitiveCompare("Accept") != .orderedSame
+    }
+
+    /// One line for the screen header: `athena · UFW · Active · 12 Inbound · 3 Outbound`.
+    var headline: String {
+        [host, backend, status, rulesSummary]
+            .compactMap { $0 }
+            .filter { !$0.isEmpty }
+            .joined(separator: " · ")
+    }
+}
+
+/// A socket listening on the host, and what the firewall does to traffic arriving at it —
+/// web ≥ 0.7.3.
+///
+/// A listener the firewall does not admit is not reachable however loudly it is listening,
+/// and a listener nothing covers is the one worth knowing about. That is the whole reason
+/// this list sits under the rules rather than on the Ports screen: the pairing is the reading.
+struct HostListener: Codable, Identifiable {
+    /// Nothing here is unique on its own — one process binds many ports, one port answers on
+    /// two addresses — so identity is the whole tuple.
+    var id: String {
+        [protocolName, address, port, process, service]
+            .map { $0 ?? "" }
+            .joined(separator: "|")
+    }
+    let protocolName: String?
+    /// The bind address. `0.0.0.0` or `::` is every interface; `127.0.0.1` is this machine only.
+    let address: String?
+    let port: String?
+    /// What usually answers on this port, from the server's port catalogue.
+    let service: String?
+    let process: String?
+    /// "Open", "Restricted", "Not allowed", "Local only", "No firewall" or "Unknown".
+    let covered: String?
+
+    enum CodingKeys: String, CodingKey {
+        case protocolName = "protocol"
+        case address, port, service, process, covered
+    }
+
+    /// How alarming the coverage is. `Open` is a warning rather than an error — a web server
+    /// is supposed to be open — but it is the row to read first, and `No firewall` says the
+    /// question was never asked.
+    enum Exposure {
+        case open, restricted, closed, none, unknown
+    }
+
+    var exposure: Exposure {
+        switch (covered ?? "").lowercased() {
+        case "open": return .open
+        case "restricted": return .restricted
+        case "not allowed", "local only": return .closed
+        case "no firewall": return .none
+        default: return .unknown
+        }
+    }
 }
 
 struct FirewallInfo: Codable {
@@ -789,19 +903,32 @@ struct TrafficBucket: Codable, Identifiable {
 /// A permissive operator rule sitting above a block is the bug this list exists to make
 /// visible, and it is invisible in a set that leaves half the rules out.
 struct ConfigRuleInfo: Codable, Identifiable {
-    /// The rule name is the server's own handle for it — `remove_rule` and the `replace`
-    /// field of `save_config_rule` both take exactly this string.
-    var id: String { name }
+    /// The rule's whole shape, hashed into one string by the server — web ≥ 0.7.3.
+    ///
+    /// Names are not unique across a host: two UFW rules can both be called
+    /// `allow-inbound-ssh`, and once the list stopped being this app's private ledger the
+    /// name stopped being able to identify a row. `delete_host_rule` takes this and nothing
+    /// else, and the server refuses an ambiguous match rather than guessing which of two
+    /// identical rules to remove.
+    let key: String?
+    /// Identity for the list. The key when the server sends one, the name on a 0.7.0–0.7.2
+    /// server that has no keys — where the list *is* this app's ledger and names are unique.
+    var id: String { (key?.isEmpty == false ? key : nil) ?? name }
+    /// The server's own handle for the rule. Still what `remove_rule` and the `replace` field
+    /// of `save_config_rule` take, but only meaningful for a rule this app wrote.
     let name: String
     /// The operator's wording, or one the server minted from the rule's own fields.
     let label: String?
     /// The console's own allow rule for its listen port. The server refuses to remove or
     /// shadow it, because doing so cuts off the request carrying the change.
     let isProtected: Bool?
-    /// True for a rule the operator wrote, false for one the engine minted. Only a custom
-    /// rule can be edited here — an engine block is lifted by unblocking its address, not by
-    /// rewriting it.
+    /// True for a rule the operator wrote in Firewall Config, false for one the engine minted.
     let isCustom: Bool?
+    /// True for a rule read out of the kernel that this app did not write — UFW's, Docker's,
+    /// WireGuard's — web ≥ 0.7.3. It can still be edited and removed, but the write goes out
+    /// through whichever backend owns it, and an edit is a delete-and-rewrite rather than an
+    /// edit in place.
+    let isForeign: Bool?
     let inbound: Bool?
     let action: String?
     let direction: String?
@@ -814,26 +941,75 @@ struct ConfigRuleInfo: Codable, Identifiable {
     let expiry: String?
 
     enum CodingKeys: String, CodingKey {
-        case name, label, isProtected, isCustom, inbound, action, direction
+        case name, key, label, isProtected, isCustom, isForeign, inbound, action, direction
         case protocolName = "protocol"
         case ports, addresses, origin, expiry
     }
 
     var isAllow: Bool { (action ?? "").caseInsensitiveCompare("Allow") == .orderedSame }
     var isProtectedRule: Bool { isProtected == true }
-    var isEditable: Bool { isCustom == true && !isProtectedRule }
+    /// A rule the host owns rather than this app — web ≥ 0.7.3.
+    var isForeignRule: Bool { isForeign == true }
 
-    /// What the rule matches, in one line: `TCP 22 · 10.0.0.0/8`. The server sends
-    /// `All IPv4, All IPv6` for an unrestricted address field and an empty string for an
-    /// unrestricted port field, and "every port" is the half worth spelling out — a rule
-    /// with no port is the one that does more than it looks like it does.
+    /// Everything but the console's own allow rule can be edited on 0.7.3, where the server
+    /// can write through UFW as well as its own table. On an older server the list is this
+    /// app's ledger and only the operator's own rules are rewritable — an engine block there
+    /// is lifted by unblocking its address, not by rewriting the rule underneath it, which
+    /// would leave the engine believing it still holds a block it no longer has.
+    ///
+    /// `key` is the probe for which server this is: only 0.7.3 sends one.
+    var isEditable: Bool {
+        guard !isProtectedRule else { return false }
+        return key?.isEmpty == false || isCustom == true
+    }
+
+    /// True once the server identifies rules by shape — web ≥ 0.7.3.
+    ///
+    /// It is the probe for the whole host-firewall API: where there is a key there is a
+    /// `delete_host_rule` that takes it, and removal goes that way for *every* rule rather
+    /// than only foreign ones. Which backend owns a rule is the server's decision to make —
+    /// it routes ours back through its ledger and UFW's through `ufw delete` — and a name
+    /// lookup from here would be the app guessing at it with a string that is not unique.
+    var hasHostKey: Bool { key?.isEmpty == false }
+
+    /// Whether port 22 falls in this rule's port list — the one removal worth naming out loud,
+    /// because dropping the rule that admits SSH can end the session the host is administered
+    /// over and nothing in this app can put it back.
+    ///
+    /// Matched as a whole number so `2222` and `1022` do not count, and a range is expanded
+    /// rather than string-matched: `20-25` admits SSH and contains no literal 22.
+    var matchesSSH: Bool {
+        // Every port includes 22.
+        if FirewallRuleDraft.isAllPorts(ports) { return true }
+        let field = (ports ?? "").trimmingCharacters(in: .whitespaces)
+
+        return field.split(separator: ",").contains { part in
+            let piece = part.trimmingCharacters(in: .whitespaces)
+            // `8000-8001` and `8000:8001` are both forms the server accepts.
+            let bounds = piece.split(maxSplits: 1, whereSeparator: { $0 == "-" || $0 == ":" }).map {
+                Int($0.trimmingCharacters(in: .whitespaces))
+            }
+            switch bounds.count {
+            case 1: return bounds[0] == 22
+            case 2:
+                guard let low = bounds[0], let high = bounds[1] else { return false }
+                return low <= 22 && 22 <= high
+            default: return false
+            }
+        }
+    }
+
+    /// What the rule matches, in one line: `TCP 22 · 10.0.0.0/8`. The server spells out both
+    /// unrestricted cases — `All IPv4, All IPv6` and `All ports` — and "every port" is the
+    /// half worth spelling out, because a rule with no port is the one that does more than it
+    /// looks like it does.
     var matchSummary: String {
         var parts: [String] = []
         let proto = protocolName ?? ""
         if !proto.isEmpty && proto.caseInsensitiveCompare("Any") != .orderedSame {
             parts.append(proto)
         }
-        parts.append((ports ?? "").isEmpty ? "all ports" : ports!)
+        parts.append(FirewallRuleDraft.isAllPorts(ports) ? "all ports" : ports!)
         if let addresses, !addresses.isEmpty { parts.append(addresses) }
         return parts.joined(separator: " · ")
     }
@@ -845,8 +1021,10 @@ struct ConfigRuleInfo: Codable, Identifiable {
             action: FirewallRuleDraft.Action(serverText: action),
             direction: FirewallRuleDraft.Direction(serverText: direction, inbound: inbound),
             protocolName: FirewallRuleDraft.protocolMatching(protocolName),
-            ports: ports ?? "",
-            // The server's "any" placeholder is text for reading, not for typing back.
+            // The server's "any" placeholders are text for reading, not for typing back:
+            // `All ports` sent back as a port range is a rule the server cannot parse, and
+            // clearing the field is what actually means "every port" on the wire.
+            ports: FirewallRuleDraft.isAllPorts(ports) ? "" : (ports ?? ""),
             addresses: FirewallRuleDraft.isAnyAddress(addresses) ? "" : (addresses ?? "")
         )
     }
@@ -919,6 +1097,14 @@ struct FirewallRuleDraft: Equatable {
 
     static func isAnyAddress(_ raw: String?) -> Bool {
         anyAddressWords.contains((raw ?? "").trimmingCharacters(in: .whitespaces).lowercased())
+    }
+
+    /// The server's wording for an unrestricted port field. It sends `All ports` rather than
+    /// an empty string, and typing that back would be read as a port named "All ports" — the
+    /// same trap `isAnyAddress` exists for.
+    static func isAllPorts(_ raw: String?) -> Bool {
+        let text = (raw ?? "").trimmingCharacters(in: .whitespaces).lowercased()
+        return text.isEmpty || text == "all ports" || text == "any"
     }
 
     /// Nil when the draft is worth sending; the reason when it is not.

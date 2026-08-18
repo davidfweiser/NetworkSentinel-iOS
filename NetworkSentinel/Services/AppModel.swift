@@ -617,7 +617,8 @@ final class AppModel {
         fieldName: String? = nil,
         direction: String? = nil,
         rule: FirewallRuleDraft? = nil,
-        replacing: String? = nil
+        replacing: String? = nil,
+        ruleKey: String? = nil
     ) async -> Bool {
         guard let resp = await sendAction(
             action,
@@ -627,7 +628,8 @@ final class AppModel {
             fieldName: fieldName,
             direction: direction,
             rule: rule,
-            replacing: replacing
+            replacing: replacing,
+            ruleKey: ruleKey
         ) else { return false }
         return await applyActionResult(resp)
     }
@@ -644,7 +646,8 @@ final class AppModel {
         fieldName: String? = nil,
         direction: String? = nil,
         rule: FirewallRuleDraft? = nil,
-        replacing: String? = nil
+        replacing: String? = nil,
+        ruleKey: String? = nil
     ) async -> ActionResponse? {
         guard let server else { return nil }
         // Set before the request, not after: a successful action refreshes, and that
@@ -661,7 +664,10 @@ final class AppModel {
                 value: value,
                 kind: kind,
                 fieldName: fieldName,
-                direction: direction
+                direction: direction,
+                rule: rule,
+                replacing: replacing,
+                ruleKey: ruleKey
             )
         } catch APIError.unauthorized {
             store.setSessionToken(nil, for: server.id)
@@ -951,15 +957,47 @@ final class AppModel {
 
     // MARK: Firewall configuration (web 0.7+)
 
-    /// Adds a rule, or replaces `replacing` when the form was opened on an existing one.
+    /// Adds a rule, or replaces an existing one when the form was opened on one.
+    ///
+    /// Which of `replacing` and `ruleKey` carries the original is not a style choice. A rule
+    /// this app wrote is replaced by name, through its own ledger. A rule UFW wrote has no
+    /// ledger entry and no unique name, so the server takes its whole shape as `key`, deletes
+    /// it where it lives, and writes these values as a new rule — UFW has no in-place edit,
+    /// and writing the replacement on top would leave both in force.
     ///
     /// Returns whether it took, because this one has a form behind it: a rule the server
     /// refuses must leave the sheet open with the reason on it, not dismiss as though it
     /// had been written. Every other action in this file can discard the result because a
     /// banner is the whole of its feedback.
     @discardableResult
-    func saveConfigRule(_ rule: FirewallRuleDraft, replacing: String? = nil) async -> Bool {
-        await runAction("save_config_rule", rule: rule, replacing: replacing)
+    func saveConfigRule(
+        _ rule: FirewallRuleDraft,
+        replacing: String? = nil,
+        ruleKey: String? = nil
+    ) async -> Bool {
+        await runAction("save_config_rule", rule: rule, replacing: replacing, ruleKey: ruleKey)
+    }
+
+    // MARK: Host firewall (web 0.7.3+)
+
+    /// Removes a rule the host owns — UFW's, Docker's, anyone's — by its shape.
+    ///
+    /// `remove_rule` cannot do this: it looks the name up in this app's ledger, and a UFW
+    /// rule was never in it. The server routes the delete back out the way the rule went in,
+    /// `ufw delete` or `nft delete rule … handle`, and refuses a shape that matches more than
+    /// one rule rather than removing an arbitrary one of them.
+    func deleteHostRule(key: String) async {
+        _ = await runAction("delete_host_rule", ruleKey: key)
+    }
+
+    /// Re-reads ufw/nft/iptables/ss on the server.
+    ///
+    /// The scan is cached behind `/api/state` — the poll would otherwise shell out four times
+    /// every few seconds — so a pull-to-refresh on the Firewall Config screen returns the same
+    /// list until this is called. Every write invalidates the cache server-side; this is for
+    /// the case where something changed the firewall out from under the app.
+    func rescanFirewall() async {
+        _ = await runAction("rescan_firewall")
     }
 
     /// Bandwidth accounting on the host's interfaces. Off by default on the server, and

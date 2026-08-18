@@ -162,7 +162,8 @@ actor APIClient {
 
     /// POST `/api/action` — matches Network Sentinel web 0.3+ `ActionRequest`
     /// (`action`, `ip`, `value`, `name`, `kind`, `direction`), plus the 0.7+ config-rule
-    /// fields (`label`, `ruleAction`, `protocol`, `ports`, `addresses`, `replace`).
+    /// fields (`label`, `ruleAction`, `protocol`, `ports`, `addresses`, `replace`) and the
+    /// 0.7.3+ `key`.
     ///
     /// A rule carries six fields at once, which is why 0.7 gave them their own slots rather
     /// than overloading `value`/`kind` — the server says as much in its own DTO.
@@ -176,7 +177,8 @@ actor APIClient {
         fieldName: String? = nil,
         direction: String? = nil,
         rule: FirewallRuleDraft? = nil,
-        replacing: String? = nil
+        replacing: String? = nil,
+        ruleKey: String? = nil
     ) async throws -> ActionResponse {
         let url = try url(base: baseURL, path: "/api/action")
         var body: [String: String] = ["action": action]
@@ -200,6 +202,11 @@ actor APIClient {
         }
         // Only on an edit. Omitted, the server adds a rule instead of replacing one.
         if let replacing, !replacing.isEmpty { body["replace"] = replacing }
+        // The whole-shape identity of a scanned host rule — web 0.7.3+. `delete_host_rule`
+        // takes it alone; `save_config_rule` takes it when the rule being edited belongs to
+        // UFW rather than to this app, and the server then removes the original where it
+        // lives before writing the replacement.
+        if let ruleKey, !ruleKey.isEmpty { body["key"] = ruleKey }
 
         var req = request(url: url, method: "POST", token: token)
         req.httpBody = try encoder.encode(body)
