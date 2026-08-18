@@ -347,9 +347,11 @@ struct FirewallConfigView: View {
                     .foregroundStyle(NSTheme.muted)
                     .listRowBackground(NSTheme.row)
             } else {
-                ForEach(list) { rule in
-                    row(rule)
-                }
+                // A rule's key is its shape, and the Windows Firewall holds the same shape
+                // once per profile — so several rows can carry one key. Identity for the list
+                // has to survive that; the key itself still goes to the server untouched,
+                // where an ambiguous one is the server's to refuse.
+                ForEach(list.uniquedRows()) { row($0.value) }
             }
 
             Button {
@@ -536,7 +538,8 @@ struct FirewallConfigView: View {
                         .foregroundStyle(NSTheme.muted)
                         .listRowBackground(NSTheme.row)
                 }
-                ForEach(listeners) { listener in
+                ForEach(listeners.uniquedRows()) { entry in
+                    let listener = entry.value
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 6) {
                             Text(listener.process ?? "—")
