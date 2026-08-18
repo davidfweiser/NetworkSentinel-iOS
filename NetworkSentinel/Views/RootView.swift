@@ -342,14 +342,10 @@ struct MainTabView: View {
 
             Tab("Firewall", systemImage: "shield.lefthalf.filled", value: 3) {
                 NavigationStack {
-                    // Opens on the whole host firewall where there is one to show. A server
-                    // older than 0.7 has no Firewall Config page in its own console either,
-                    // so there the tab opens on the blocks, which every version has.
-                    if model.state?.configRules == nil {
-                        FirewallBlockView()
-                    } else {
-                        FirewallConfigView()
-                    }
+                    // Always the whole host firewall. Which endpoint it arrives on is the
+                    // model's problem, and a server that has no such page says so on the
+                    // screen rather than being silently swapped for a different one.
+                    FirewallConfigView()
                 }
             }
 

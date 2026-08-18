@@ -45,13 +45,15 @@ struct FirewallConfigView: View {
         }
     }
 
-    private var rules: [ConfigRuleInfo] { model.state?.configRules ?? [] }
+    // Whichever place this server keeps the scan: in the poll, or on `/api/hostfirewall`
+    // because reading it costs seconds. The screen does not care which; the model resolves it.
+    private var rules: [ConfigRuleInfo] { model.configRules }
     private var inbound: [ConfigRuleInfo] { rules.filter { $0.inbound ?? true } }
     private var outbound: [ConfigRuleInfo] { rules.filter { !($0.inbound ?? true) } }
-    private var listeners: [HostListener] { model.state?.listeners ?? [] }
+    private var listeners: [HostListener] { model.hostListeners }
     /// Absent on web 0.7.0–0.7.3, where `configRules` is this app's ledger and there is no
     /// host-wide reading to report.
-    private var host: HostFirewallInfo? { model.state?.hostFirewall }
+    private var host: HostFirewallInfo? { model.hostFirewall }
 
     var body: some View {
         // The Firewall tab opens here — on the firewall itself, not on the ledger of blocks
@@ -61,6 +63,7 @@ struct FirewallConfigView: View {
         // the tab, so neither this screen nor the ones it pushes carries one.
         List {
             groupSection
+            scanStateSection
             hostSection
             rulesSection("Inbound", inbound)
             rulesSection("Outbound", outbound)
@@ -69,6 +72,9 @@ struct FirewallConfigView: View {
         .scrollContentBackground(.hidden)
         .background { AmbientField() }
         .navigationTitle("Firewall Config")
+        // A server that keeps the scan off /api/state is read here rather than on the poll —
+        // netsh takes seconds, which is why that build moved it in the first place.
+        .task { await model.ensureHostFirewall() }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -118,7 +124,68 @@ struct FirewallConfigView: View {
         } message: {
             Text(prefillRefusal ?? "")
         }
-        .refreshable { await model.refresh(silent: false) }
+        .refreshable {
+            await model.refresh(silent: false)
+            // Where the scan has its own endpoint the poll does not carry it, so a pull that
+            // only re-read /api/state would leave this screen showing the same list forever.
+            // Without the rescan flag the server answers from its cache — Rescan is the one
+            // that makes it shell out to netsh again.
+            if model.hostScan != nil { await model.loadHostFirewall() }
+        }
+    }
+
+    /// What the scan is doing, when it is not simply there.
+    ///
+    /// Three states worth saying out loud: still reading (a Windows host with thousands of
+    /// rules genuinely takes seconds), could not be read, and this server has no such page at
+    /// all. The last one used to be silent — the tab quietly showed a different screen, which
+    /// reads as the app having lost a feature rather than the server not having it.
+    @ViewBuilder
+    private var scanStateSection: some View {
+        if model.hostScanLoading && rules.isEmpty {
+            Section {
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text("Reading the host firewall…")
+                        .foregroundStyle(NSTheme.muted)
+                }
+                .listRowBackground(NSTheme.row)
+            } footer: {
+                Text("This server reads its firewall on request rather than on every poll, because the read takes seconds on a host carrying a few thousand rules.")
+            }
+        } else if let error = model.hostScanError, rules.isEmpty {
+            Section {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(NSTheme.warning)
+                    .listRowBackground(NSTheme.row)
+                Button {
+                    Task { await model.loadHostFirewall() }
+                } label: {
+                    Label("Try again", systemImage: "arrow.clockwise")
+                }
+                .tint(NSTheme.accent)
+                .listRowBackground(NSTheme.row)
+            }
+        } else if !model.hasFirewallConfig && !model.hostScanLoading {
+            Section {
+                Label {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("No Firewall Config on this server")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(NSTheme.text)
+                        Text("It sends no rule list in \(model.state?.version.map { "version \($0)" } ?? "its state") and has no separate scan endpoint. The page comes from Linux and macOS servers on web 0.7 or newer, and from a Windows server on 0.7.4 or newer. Firewall & Block above still works.")
+                            .font(.caption)
+                            .foregroundStyle(NSTheme.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                } icon: {
+                    Image(systemName: "questionmark.circle")
+                        .foregroundStyle(NSTheme.warning)
+                }
+                .listRowBackground(NSTheme.row)
+            }
+        }
     }
 
     /// The rest of the console's firewall group. Rows rather than a toolbar menu, because
@@ -336,6 +403,12 @@ struct FirewallConfigView: View {
 
                 Spacer(minLength: 6)
 
+                if let copies = rule.copiesText {
+                    Text(copies)
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(NSTheme.muted)
+                }
+
                 if rule.isProtectedRule {
                     Text("THIS CONSOLE")
                         .font(.system(size: 9, weight: .bold))
@@ -536,7 +609,16 @@ struct FirewallConfigView: View {
     private var ownershipSummary: String {
         let mine = rules.filter { !$0.isForeignRule }.count
         let theirs = rules.count - mine
-        return "\(mine) from Network Sentinel, \(theirs) from the rest of the host."
+        var text = "\(mine) from Network Sentinel, \(theirs) from the rest of the host."
+        // The Windows Firewall stores one rule per profile and protocol, so the scan folds
+        // identical rows and says how many it folded — otherwise the count on the page and
+        // the count in netsh disagree for no visible reason.
+        let folded = rules.reduce(0) { $0 + max(($1.copies ?? 1) - 1, 0) }
+        if folded > 0 { text += " \(folded) duplicate rules folded into the rows they repeat." }
+        if let disabled = host?.disabledRules, disabled > 0 {
+            text += " \(disabled) disabled rules not listed."
+        }
+        return text
     }
 
     /// The listener line both other front-ends print above their table: how many sockets, and

@@ -160,6 +160,39 @@ actor APIClient {
         return try decode(data)
     }
 
+    /// `GET /api/hostfirewall` — the whole firewall scan on its own endpoint.
+    ///
+    /// A Windows server keeps this off `/api/state`: `netsh` takes seconds on a host with a
+    /// few thousand rules, and re-sending a few hundred KB of them every 2.5-second poll is
+    /// not something either end can afford. So the scan is fetched when the screen is opened,
+    /// after a write, and on Rescan — which is exactly what its own web console does.
+    ///
+    /// Returns nil on 404: a server that answers `/api/state` with `configRules` has no such
+    /// route, and that is not an error to report — it is how the app tells the two apart.
+    /// A 60-second timeout rather than the session default, because the scan really can take
+    /// tens of seconds and a phone on a slow link should wait rather than fail.
+    func fetchHostFirewall(
+        baseURL: String,
+        token: String?,
+        rescan: Bool = false
+    ) async throws -> HostFirewallScan? {
+        let url = try url(base: baseURL, path: "/api/hostfirewall" + (rescan ? "?rescan=1" : ""))
+        var req = request(url: url, method: "GET", token: token)
+        req.timeoutInterval = 60
+        req.cachePolicy = .reloadIgnoringLocalCacheData
+
+        let (data, response) = try await session.data(for: req)
+        if let http = response as? HTTPURLResponse {
+            if http.statusCode == 401 {
+                let msg = (try? decoder.decode(AuthResponse.self, from: data))?.message
+                throw APIError.unauthorized(msg)
+            }
+            if http.statusCode == 404 { return nil }
+        }
+        try throwIfNeeded(response: response, data: data)
+        return try decode(data)
+    }
+
     /// POST `/api/action` — matches Network Sentinel web 0.3+ `ActionRequest`
     /// (`action`, `ip`, `value`, `name`, `kind`, `direction`), plus the 0.7+ config-rule
     /// fields (`label`, `ruleAction`, `protocol`, `ports`, `addresses`, `replace`) and the

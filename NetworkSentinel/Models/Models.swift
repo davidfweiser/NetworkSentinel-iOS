@@ -91,6 +91,19 @@ struct ServerState: Codable {
     let listeners: [HostListener]?
 }
 
+/// The whole firewall reading, as `GET /api/hostfirewall` returns it.
+///
+/// Not every server puts this in `/api/state`. A Windows host reads its firewall with `netsh`,
+/// which on a machine carrying a few thousand rules takes seconds — far too slow to re-send on
+/// a 2.5-second poll — so that build serves the scan from its own endpoint, fetched when the
+/// page is opened, after a write, and on Rescan. The fields are the ones `/api/state` carries
+/// on a Linux server, so the screen reads the same either way; only the delivery differs.
+struct HostFirewallScan: Codable {
+    let configRules: [ConfigRuleInfo]?
+    let hostFirewall: HostFirewallInfo?
+    let listeners: [HostListener]?
+}
+
 /// The host firewall as one reading — web ≥ 0.7.4.
 ///
 /// Before 0.7.4 the Firewall Config screen showed this app's ledger and nothing else, which
@@ -127,13 +140,23 @@ struct HostFirewallInfo: Codable {
     /// Local time of the scan, `HH:mm:ss`. The scan is cached server-side, so this is how
     /// old the list is — it is not the poll time.
     let scannedAt: String?
+    /// Rules the host holds but does not evaluate. Counted rather than listed, because a
+    /// disabled rule is not part of the firewall's behaviour — but "12 rules" against a
+    /// `netsh` listing of 300 needs the difference explained.
+    let disabledRules: Int?
 
     var isEnabled: Bool { enabled == true }
 
     /// True when inbound traffic matching nothing is dropped. The default when the server
     /// says nothing is the safe reading, not the permissive one.
     var dropsInboundByDefault: Bool {
-        (defaultInbound ?? "").caseInsensitiveCompare("Accept") != .orderedSame
+        // Two vocabularies for one policy: nftables and UFW report Accept/Drop, the Windows
+        // Firewall reports Allow/Block. Matching only "Accept" called a permissive Windows
+        // host locked down, which is the reading that matters most and the one worst to get
+        // backwards. Anything that is not a known permissive word stays the safe reading.
+        let policy = defaultInbound ?? ""
+        return !(policy.caseInsensitiveCompare("Accept") == .orderedSame
+                 || policy.caseInsensitiveCompare("Allow") == .orderedSame)
     }
 
     /// One line for the screen header: `athena · UFW · Active · 12 Inbound · 3 Outbound`.
@@ -989,11 +1012,21 @@ struct ConfigRuleInfo: Codable, Identifiable {
     let origin: String?
     /// When an auto-block rule lapses. Empty on a rule that never expires.
     let expiry: String?
+    /// How many identical rules this row stands for. The Windows Firewall stores one rule per
+    /// profile and per protocol, so a single "allow SSH" arrives as four; the server folds them
+    /// and says how many it folded rather than printing the same row four times.
+    let copies: Int?
 
     enum CodingKeys: String, CodingKey {
         case name, key, label, isProtected, isCustom, isForeign, inbound, action, direction
         case protocolName = "protocol"
-        case ports, addresses, origin, expiry
+        case ports, addresses, origin, expiry, copies
+    }
+
+    /// "×4" for a row standing in for four identical rules, nil for an ordinary one.
+    var copiesText: String? {
+        guard let copies, copies > 1 else { return nil }
+        return "×\(copies)"
     }
 
     var isAllow: Bool { (action ?? "").caseInsensitiveCompare("Allow") == .orderedSame }

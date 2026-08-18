@@ -25,6 +25,16 @@ final class AppModel {
     private let api = APIClient()
 
     var state: ServerState?
+    /// The firewall scan from `/api/hostfirewall`, on servers that keep it off `/api/state`.
+    /// Nil until something asks for it — it is never part of the poll.
+    var hostScan: HostFirewallScan?
+    /// True once the server has answered 404: it has no separate scan endpoint, so whatever
+    /// `/api/state` carries is all there is.
+    var hostScanUnsupported = false
+    var hostScanLoading = false
+    /// Why the scan could not be read, kept apart from `lastError` so a slow `netsh` does not
+    /// raise a banner over the whole app.
+    var hostScanError: String?
     var isLoading = false
     var isRefreshing = false
     var lastError: String?
@@ -975,7 +985,9 @@ final class AppModel {
         replacing: String? = nil,
         ruleKey: String? = nil
     ) async -> Bool {
-        await runAction("save_config_rule", rule: rule, replacing: replacing, ruleKey: ruleKey)
+        let ok = await runAction("save_config_rule", rule: rule, replacing: replacing, ruleKey: ruleKey)
+        await reloadHostScanAfterWrite()
+        return ok
     }
 
     // MARK: Host firewall (web 0.7.4+)
@@ -988,6 +1000,72 @@ final class AppModel {
     /// one rule rather than removing an arbitrary one of them.
     func deleteHostRule(key: String) async {
         _ = await runAction("delete_host_rule", ruleKey: key)
+        await reloadHostScanAfterWrite()
+    }
+
+    // MARK: The scan on its own endpoint (Windows 0.7.4+)
+
+    /// What the Firewall Config screen should draw, from whichever place this server put it.
+    var configRules: [ConfigRuleInfo] {
+        state?.configRules ?? hostScan?.configRules ?? []
+    }
+
+    var hostFirewall: HostFirewallInfo? {
+        state?.hostFirewall ?? hostScan?.hostFirewall
+    }
+
+    var hostListeners: [HostListener] {
+        state?.listeners ?? hostScan?.listeners ?? []
+    }
+
+    /// True when this server has a Firewall Config page at all — either in the poll or on the
+    /// endpoint. False only once the endpoint has answered 404 with no `configRules` in state.
+    var hasFirewallConfig: Bool {
+        state?.configRules != nil || hostScan != nil
+    }
+
+    /// Fetches the scan if this server keeps it off `/api/state` and it has not been read yet.
+    /// Called when the screen appears; cheap and silent when there is nothing to do.
+    func ensureHostFirewall() async {
+        guard state?.configRules == nil, hostScan == nil, !hostScanUnsupported, !hostScanLoading
+        else { return }
+        await loadHostFirewall()
+    }
+
+    /// Reads `/api/hostfirewall`. `rescan` makes the server re-read the firewall itself rather
+    /// than answer from its cache — the same distinction the web console draws between opening
+    /// the page and pressing Rescan.
+    func loadHostFirewall(rescan: Bool = false) async {
+        guard let server, !hostScanLoading else { return }
+        hostScanLoading = true
+        hostScanError = nil
+        defer { hostScanLoading = false }
+        do {
+            let scan = try await api.fetchHostFirewall(
+                baseURL: server.baseURL,
+                token: store.sessionToken(for: server.id),
+                rescan: rescan
+            )
+            if let scan {
+                hostScan = scan
+                hostScanUnsupported = false
+            } else {
+                // 404: this server has no such route. Whatever /api/state carried is all there is.
+                hostScanUnsupported = true
+            }
+        } catch APIError.unauthorized {
+            // The poll owns re-authentication; this one just says it could not read.
+            hostScanError = "Session expired — the firewall scan was not read."
+        } catch {
+            hostScanError = error.localizedDescription
+        }
+    }
+
+    /// Re-reads the scan after a write, but only for a server that serves it separately —
+    /// where it rides in `/api/state` the next poll already carries the change.
+    private func reloadHostScanAfterWrite() async {
+        guard hostScan != nil else { return }
+        await loadHostFirewall()
     }
 
     /// Re-reads ufw/nft/iptables/ss on the server.
@@ -997,7 +1075,13 @@ final class AppModel {
     /// list until this is called. Every write invalidates the cache server-side; this is for
     /// the case where something changed the firewall out from under the app.
     func rescanFirewall() async {
-        _ = await runAction("rescan_firewall")
+        // Where the scan has its own endpoint, rescanning *is* re-fetching it with the flag
+        // set; the action verb belongs to the servers that cache it behind /api/state.
+        if hostScan != nil {
+            await loadHostFirewall(rescan: true)
+        } else {
+            _ = await runAction("rescan_firewall")
+        }
     }
 
     /// Bandwidth accounting on the host's interfaces. Off by default on the server, and
