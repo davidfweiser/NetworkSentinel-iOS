@@ -312,10 +312,16 @@ struct MainTabView: View {
         model.liveSeverity >= .high ? model.liveSeverity.color : NSTheme.accent
     }
 
+    /// The host firewall gets a tab of its own only where there is one to show — web 0.7+.
+    /// On an older server `configRules` never arrives and the tab would be an empty screen
+    /// with a permanent place in the tab bar.
+    private var showsFirewall: Bool { model.state?.configRules != nil }
+
     var body: some View {
-        // Four tabs, not five: Hosts and Connections were two readings of one question and
-        // are now one Traffic tab, and the Dashboard's settings cards moved to Detection —
-        // which leaves Status as a screen you read rather than scroll.
+        // Hosts and Connections were two readings of one question and are now one Traffic
+        // tab, and the Dashboard's settings cards moved to Detection — which leaves Status a
+        // screen you read rather than scroll. Firewall is the fourth because the console and
+        // the desktop both carry it as a section of their own rather than a page inside one.
         TabView(selection: $tab) {
             Tab("Status", systemImage: "gauge.with.dots.needle.67percent", value: 0) {
                 StatusView(showServers: $showServers, onOpenThreats: { tab = 1 })
@@ -330,9 +336,20 @@ struct MainTabView: View {
                 TrafficView()
             }
 
-            Tab("More", systemImage: "ellipsis.circle", value: 3) {
-                MoreView()
+            if showsFirewall {
+                Tab("Firewall", systemImage: "shield.lefthalf.filled", value: 3) {
+                    FirewallConfigView()
+                }
             }
+
+            Tab("More", systemImage: "ellipsis.circle", value: 4) {
+                MoreView(onOpenFirewall: { if showsFirewall { tab = 3 } })
+            }
+        }
+        // Switching to a server that predates the host firewall takes the tab away with it,
+        // and a selection pointing at a tab that is gone shows nothing at all.
+        .onChange(of: showsFirewall) { _, present in
+            if !present && tab == 3 { tab = 0 }
         }
         // Reading a dense table on a phone is worth more than a permanent tab bar.
         .tabBarMinimizeBehavior(.onScrollDown)

@@ -54,6 +54,14 @@ struct FirewallConfigView: View {
     private var host: HostFirewallInfo? { model.state?.hostFirewall }
 
     var body: some View {
+        // A tab root rather than a pushed screen since it was promoted out of More, so it
+        // carries its own stack the way Status, Threats and Traffic do.
+        NavigationStack {
+            content
+        }
+    }
+
+    private var content: some View {
         List {
             hostSection
             rulesSection("Inbound", inbound)

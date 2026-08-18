@@ -1,6 +1,11 @@
 import SwiftUI
 
 struct MoreView: View {
+    /// Switches to the Firewall tab. The screen lives there now, so this list points at it
+    /// rather than pushing a second copy onto its own stack — the same shape Status uses to
+    /// hand the Threats tab a tap.
+    var onOpenFirewall: () -> Void = {}
+
     @Environment(AppModel.self) private var model
     @State private var showServers = false
     @State private var showEditServer = false
@@ -499,27 +504,33 @@ struct MoreView: View {
             }
         }
 
-        // Web 0.7+. A second section rather than a row in the one above, because it is a
-        // different list of a different thing — the section above is the blocks the engine
-        // and this app minted, and Firewall Config is every rule the firewall evaluates.
-        // Folding them together is what would make a permissive rule above a block invisible.
-        // Nested here so the List keeps room under ViewBuilder's ten-child limit.
+        // Web 0.7+. The whole host firewall has its own tab now, so this is a signpost
+        // rather than a second way in: two navigation paths to one screen is how the same
+        // list ends up open twice on a phone, once pushed and once rooted.
+        //
+        // It stays a separate thing from the section above and always was: that one is the
+        // blocks the engine and this app minted, this is every rule the firewall evaluates,
+        // and folding them together is what would make a permissive rule above a block
+        // invisible.
         if let configRules = model.state?.configRules {
             Section {
-                NavigationLink {
-                    FirewallConfigView()
+                Button {
+                    onOpenFirewall()
                 } label: {
                     HStack {
-                        Label("Firewall Config", systemImage: "list.bullet.rectangle")
+                        Label("Firewall Config", systemImage: "shield.lefthalf.filled")
                         Spacer(minLength: 8)
                         Text("\(configRules.count)")
                             .font(.caption.monospaced())
+                            .foregroundStyle(NSTheme.muted)
+                        Image(systemName: "arrow.up.forward.app")
+                            .font(.caption)
                             .foregroundStyle(NSTheme.muted)
                     }
                 }
                 .listRowBackground(NSTheme.row)
             } footer: {
-                Text("Every rule the firewall evaluates, in the order it evaluates them — engine blocks first, then rules you configure. Add, edit and remove them here.")
+                Text("Every rule the firewall evaluates, in the order it evaluates them — engine blocks first, then rules you configure — is on the Firewall tab, with the listening sockets under it. Add, edit and remove them there.")
             }
         }
     }
