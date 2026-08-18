@@ -9,7 +9,7 @@ Connect to one or more hosts running the headless web UI (`-w` / `--web`), sign 
 | Area | What you get |
 |------|----------------|
 | **Multi-server** | Add/edit/delete servers; switch between home, lab, VPS, etc. |
-| **Dashboard** | Needs-attention card with one-tap block, live stats, scrubbable activity chart, sleep/wake, pause/resume, auto-block controls and rule expiry |
+| **Status** | Needs-attention card with one-tap block, live stats, scrubbable activity chart, sleep/wake, pause/resume, auto-block controls and rule expiry, and the way through to Detection, Enforcement and Data flow |
 | **Sleep / Wake** | Stops every watcher on the server and parks the app — dimmed data, an Asleep banner on each live tab, a 30-second heartbeat, no Critical alerts. Firewall blocks stay in force |
 | **Detection** | Toggle geo lookups, auth-log brute-force monitoring, closed-port scan detection, kernel flow events, and the server's own Critical warnings, with its status text inline |
 | **Intrusion detection** | Threat-intel blocklists, new-listener alerts, process reputation, ARP/gateway watch, startup-item watch, exfiltration monitor with threshold, honeypot decoy ports (web 0.4+) |
@@ -19,8 +19,7 @@ Connect to one or more hosts running the headless web UI (`-w` / `--web`), sign 
 | **Threats** | Severity filters, search, clear alerts, block source IP — each row saying whether that IP is actually blocked (web 0.6.3+) |
 | **Data flow** | Bandwidth meter on Status: live in/out rates, this month a day at a time, the year a month at a time (web 0.7+) |
 | **Firewall** | Its own tab: the whole host firewall — UFW's rules, WireGuard's, Docker's and this app's — in evaluation order, with add / edit / remove, service presets, the default policies, and what is listening behind them; tap a listening socket to start a rule for it (web 0.7+; host-wide on 0.7.4+) |
-| **Hosts** | Remote peers with geo/threat badges; swipe to block/unblock |
-| **Connections** | Live process + endpoint table; block remote peers |
+| **Traffic** | One tab, two readings of who this machine is talking to, switched by a picker in the navigation bar: **Hosts** — remote peers with geo/threat badges, swipe to block/unblock — and **Connections** — the live process + endpoint table, with blocking on the row |
 | **More** | Listening ports, firewall rules, allowlist add/remove/refresh, server webhook URL, HTTPS + DuckDNS remote access and certificate issuance, change master password |
 | **Alerts** | Time-sensitive notifications and in-app popups for Critical threats, leading with whether the address was blocked (web 0.6.3+), with catch-up on launch |
 | **Secure storage** | Session tokens & optional remembered passwords in Keychain |
@@ -53,7 +52,7 @@ The first two toggles show the server's own status line, so you can tell when a 
 
 ### Intrusion detection (0.4.0)
 
-A second Dashboard card, shown only against servers that advertise the suite. Each row carries the server's own status line where it publishes one, so a detector that is switched on but not actually running says why.
+A second card on Detection, reached from Status, shown only against servers that advertise the suite. Each row carries the server's own status line where it publishes one, so a detector that is switched on but not actually running says why.
 
 | Setting | What the server does |
 |---------|----------------------|
@@ -94,7 +93,7 @@ Linux and Windows carry the same suite as of web 0.5.1.
 | Where | What it shows |
 |-------|----------------|
 | **Threats** | A badge per row — **Blocked** (red), **Dry run** / **Block failed** (amber), **Not blocked** (muted) — with the server's own sentence beside it saying *why*: the gate that stopped it, or the rule already in force |
-| **Threats** | A row whose address is already blocked offers **Unblock** in place of **Block**, as the Hosts tab does. Re-blocking would only rewrite a rule that is already in force |
+| **Threats** | A row whose address is already blocked offers **Unblock** in place of **Block**, as the Hosts list does. Re-blocking would only rewrite a rule that is already in force |
 | **Needs-attention card** | The verdict sentence, and the **Blocked** state in place of the hero Block button once the server has already blocked it |
 | **Critical notifications** | The title leads with it — `Blocked · Critical — <server>` or `NOT blocked · Critical — <server>` — and the body carries the full reason. A batch overflowing the per-alert cap reports the tally (`+3 more critical alerts — 2 of 3 blocked`) |
 | **Critical banner** | The same sentence, and no Block button on an address already being dropped |
@@ -103,7 +102,7 @@ Dry run and a refused rule both read as **NOT blocked** in an alert, because nei
 
 The verdict is deliberately left off the host-local detections. The server does answer for those (*"private address, never auto-blocked"*), but a new-listener or persistence-change row has already replaced the address with *what* was detected, precisely because there is no peer to firewall — a "No" beside it only raises a question the row has already answered.
 
-**Auto-block has three states, not two.** The Dashboard control now reads **Auto-block off** / **Auto-block dry run** (amber) / **Auto-block on** (red), rather than showing a red "on" over an engine that is deliberately writing no rules. 0.6.3 publishes the engine's own `autoBlockSummary` for exactly this reason — every frontend used to rebuild that string and every one of them dropped dry run. The app keeps the button compact because the minimum level sits in its own chip beside it; the engine's full sentence still arrives in the status header the moment the toggle flips, and VoiceOver reads it from the button.
+**Auto-block has three states, not two.** The Status control now reads **Auto-block off** / **Auto-block dry run** (amber) / **Auto-block on** (red), rather than showing a red "on" over an engine that is deliberately writing no rules. 0.6.3 publishes the engine's own `autoBlockSummary` for exactly this reason — every frontend used to rebuild that string and every one of them dropped dry run. The app keeps the button compact because the minimum level sits in its own chip beside it; the engine's full sentence still arrives in the status header the moment the toggle flips, and VoiceOver reads it from the button.
 
 Servers older than 0.6.3 send none of these fields, so every badge, sentence and Unblock swap simply does not appear — the app behaves exactly as it did before.
 
@@ -163,7 +162,7 @@ The 0.7.4 web console's `blockedCount` is not ported. It is the hero subtitle on
 
 ### Sleep / Wake
 
-The web console's header **Sleep ⇄ Wake** button, in the Dashboard controls and again under More → Monitoring.
+The web console's header **Sleep ⇄ Wake** button, in the Status controls and again under More → Monitoring.
 
 Sleeping stops *everything the server watches* — the connection/port poll plus the auth-log, closed-port probe, ARP, startup-item, exfiltration and honeypot watchers, and on 0.6 servers the DNS, WireGuard, Suricata and kernel-event feeds too — so asleep means nothing is observed, not a frozen dashboard. **Firewall blocks stay in force**: sleeping stops watching, it never unblocks an address the machine is already protected from.
 
@@ -185,7 +184,7 @@ They are independent, and the app never changes one when you change the other:
 | Toggle | Where | What it does |
 |--------|-------|--------------|
 | **Critical alerts on this device** (More → Alerts) | On the iPhone, stored locally | Local notifications and in-app popups from this app, foreground and via Background App Refresh |
-| **Critical alerts on server** (Dashboard → settings) | On the server, web 0.3.5+ | Desktop notification from the server's GUI, tab badge + browser notification in its web console |
+| **Critical alerts on server** (Status → Detection) | On the server, web 0.3.5+ | Desktop notification from the server's GUI, tab badge + browser notification in its web console |
 
 From 0.3.5 each threat also carries a full ISO-8601 `ts`, so the app's notification dedupe keys on the real date. Against older servers only `HH:mm:ss` is available, so it falls back to that.
 
@@ -287,7 +286,7 @@ The web UI typically serves **plain HTTP** on the LAN. The app allows arbitrary 
 1. **Add server** — name + base URL (`http://host:port`)
 2. **Setup or sign in** — create master password (first visit) or enter existing one
 3. Optionally **Remember on this device** (Keychain)
-4. Use tabs: Dashboard · Threats · Hosts · Connections · More
+4. Use tabs: Status · Threats · Traffic · Firewall · More — Firewall appears on web 0.7+ servers, and Traffic switches between Hosts and Connections from its navigation bar
 
 ## Project layout
 
