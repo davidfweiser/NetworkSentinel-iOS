@@ -20,6 +20,7 @@ struct FirewallBlockView: View {
 
     var body: some View {
         List {
+            missingConfigSection
             firewallRulesSection
         }
         .scrollContentBackground(.hidden)
@@ -74,6 +75,44 @@ struct FirewallBlockView: View {
             Text("Lifts the block: the server deletes the inbound and outbound rules together and holds auto-block off this target for 24 hours.")
         }
         .refreshable { await model.refresh(silent: false) }
+    }
+
+    /// Why this screen is the tab root rather than Firewall Config.
+    ///
+    /// The tab falls back here when `/api/state` carries no `configRules`, and silently
+    /// showing a different screen reads as the app having lost a feature — which is exactly
+    /// how it was read. It is the server that has nothing to send: the page arrives from
+    /// Linux and macOS servers on web 0.7+, and from a Windows build carrying the port, and
+    /// there is no version to sniff because the field either arrives or it does not.
+    @ViewBuilder
+    private var missingConfigSection: some View {
+        if model.state?.configRules == nil {
+            Section {
+                Label {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("No Firewall Config on this server")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(NSTheme.text)
+                        Text(missingConfigReason)
+                            .font(.caption)
+                            .foregroundStyle(NSTheme.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                } icon: {
+                    Image(systemName: "questionmark.circle")
+                        .foregroundStyle(NSTheme.warning)
+                }
+                .listRowBackground(NSTheme.row)
+            }
+        }
+    }
+
+    private var missingConfigReason: String {
+        let version = model.state?.version ?? "an unknown version"
+        return "This server sends no rule list for it, so the Firewall tab opens here instead. "
+             + "Firewall Config comes from Linux and macOS servers on web 0.7 or newer, and from "
+             + "a Windows server built with the same port. This one reports \(version). "
+             + "Everything below is live and unaffected."
     }
 
     @ViewBuilder
