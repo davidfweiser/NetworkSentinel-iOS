@@ -76,7 +76,7 @@ struct ThreatsView: View {
             }
             .nsAsleepDimmed(model.isAsleep)
             .background { AmbientField() }
-            .navigationTitle("Threats")
+            .navigationTitle("Break-in Attempts")
             .searchable(text: $query, prompt: "IP, title, type")
             // Segmented filter must not live in the nav toolbar — on a phone it
             // collapses into an unreadable circle (All/High+/Critical → "A t C").
@@ -191,7 +191,7 @@ struct ThreatRow: View {
                 // firewall — the server rejects loopback, so the button is only an error.
                 if threat.isBlockable {
                     // An address already being dropped offers the release instead, as the
-                    // Hosts tab does: re-blocking it would only rewrite a rule in force.
+                    // Remote Computers does: re-blocking would only rewrite a rule in force.
                     if threat.blockVerdict?.isBlocked ?? isBlocked {
                         Button("Unblock", action: onUnblock)
                             .font(.caption.weight(.bold))

@@ -511,7 +511,7 @@ struct Detector: Identifiable {
             "servercritical",
             .server,
             "Critical alerts on server",
-            "Desktop and web-console warnings on the server itself. This iPhone's alerts live in More → Alerts.",
+            "Desktop and web-console warnings on the server itself. This iPhone's alerts live in Settings → Alerts.",
             s.criticalAlertsEnabled
         ) { await model.setServerCriticalAlerts($0) }
 

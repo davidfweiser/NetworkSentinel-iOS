@@ -9,18 +9,18 @@ Connect to one or more hosts running the headless web UI (`-w` / `--web`), sign 
 | Area | What you get |
 |------|----------------|
 | **Multi-server** | Add/edit/delete servers; switch between home, lab, VPS, etc. |
-| **Status** | Needs-attention card with one-tap block, live stats, scrubbable activity chart, sleep/wake, pause/resume, auto-block controls and rule expiry, and the way through to Detection, Enforcement and Data flow |
+| **Dashboard** | Needs-attention card with one-tap block, live stats, scrubbable activity chart, sleep/wake, pause/resume, auto-block controls and rule expiry, and the way through to Detection, Enforcement and Data flow |
 | **Sleep / Wake** | Stops every watcher on the server and parks the app — dimmed data, an Asleep banner on each live tab, a 30-second heartbeat, no Critical alerts. Firewall blocks stay in force |
 | **Detection** | Toggle geo lookups, auth-log brute-force monitoring, closed-port scan detection, kernel flow events, and the server's own Critical warnings, with its status text inline |
 | **Intrusion detection** | Threat-intel blocklists, new-listener alerts, process reputation, ARP/gateway watch, startup-item watch, exfiltration monitor with threshold, honeypot decoy ports (web 0.4+) |
 | **DNS hygiene** | Plaintext egress, encrypted DNS going away, unapproved resolvers, allowlist drift — with the approved-resolver list (web 0.6+) |
 | **VPN peers** | WireGuard peer monitoring, per-peer transfer threshold, and the read-only peer table (web 0.6+) |
 | **Signatures** | Suricata EVE ingestion — feed path, maximum severity, muted signature ids (web 0.6+) |
-| **Threats** | Severity filters, search, clear alerts, block source IP — each row saying whether that IP is actually blocked (web 0.6.3+) |
-| **Data flow** | Bandwidth meter on Status: live in/out rates, this month a day at a time, the year a month at a time (web 0.7+) |
-| **Firewall** | Its own tab: the whole host firewall — UFW's rules, WireGuard's, Docker's and this app's — in evaluation order, with add / edit / remove, service presets, the default policies, and what is listening behind them; tap a listening socket to start a rule for it (web 0.7+; host-wide on 0.7.4+) |
-| **Traffic** | One tab, two readings of who this machine is talking to, switched by a picker in the navigation bar: **Hosts** — remote peers with geo/threat badges, swipe to block/unblock — and **Connections** — the live process + endpoint table, with blocking on the row |
-| **More** | Listening ports, firewall rules, allowlist add/remove/refresh, server webhook URL, HTTPS + DuckDNS remote access and certificate issuance, change master password |
+| **Break-in Attempts** | Severity filters, search, clear alerts, block source IP — each row saying whether that IP is actually blocked (web 0.6.3+) |
+| **Data flow** | Bandwidth meter on Dashboard: live in/out rates, this month a day at a time, the year a month at a time (web 0.7+) |
+| **Firewall & Block** | Its own tab, with the console's three pages under it — **Firewall Config**, **Open Ports**, **Allowlist** — over the managed blocks, manual IP blocking, *Authorize firewall* and *Remove all*. Firewall Config is the whole host firewall — UFW's rules, WireGuard's, Docker's and this app's — in evaluation order, with add / edit / remove, service presets, the default policies, and what is listening behind them; tap a listening socket to start a rule for it (web 0.7+; host-wide on 0.7.4+) |
+| **Connections** | One tab, two readings of who this machine is talking to, switched by a picker in the navigation bar: **Remote Computers** — peers with geo/threat badges, swipe to block/unblock — and **Live Connections** — the process + endpoint table, with blocking on the row |
+| **Settings** | Which server this is, sign-out and master password, this device's alerts and background polling, the server's webhook URL, HTTPS + DuckDNS remote access and certificate issuance, and **Help** |
 | **Alerts** | Time-sensitive notifications and in-app popups for Critical threats, leading with whether the address was blocked (web 0.6.3+), with catch-up on launch |
 | **Secure storage** | Session tokens & optional remembered passwords in Keychain |
 
@@ -48,7 +48,7 @@ Compatible with older web servers for core monitor/block; newer settings and act
 - **Closed-port scan detection** — installs a rate-limited firewall SYN-log rule (needs elevation on the server) and watches the kernel log — PF plus `pflog0` on macOS — catching port scans that never show up as connections.
 - **Critical alerts on server** (0.3.5+) — the server's own Critical warnings: a desktop notification from its GUI and a tab-title badge in its web console. On by default.
 
-The first two toggles show the server's own status line, so you can tell when a feature is on but blocked (for example, waiting on elevation — use **Authorize firewall** in More).
+The first two toggles show the server's own status line, so you can tell when a feature is on but blocked (for example, waiting on elevation — use **Authorize firewall** on Firewall & Block).
 
 ### Intrusion detection (0.4.0)
 
@@ -64,7 +64,7 @@ A second card on Detection, reached from Status, shown only against servers that
 | **Exfiltration monitor** | Outbound bytes to one non-allowlisted public host, with a threshold picker (default 250 MB / 10 min; the server's floor is 10) |
 | **Honeypot decoy ports** | Binds decoy TCP ports; any completed connection is Critical. The port list is editable, and the server refuses its own console port |
 
-Two more 0.4 settings live where they belong rather than in that card: **auto-block rule expiry** sits with the other auto-block controls (Never / 1 hour / 6 hours / 24 hours / 7 days), and the server's **webhook URL** is in More, next to this device's alerts — it is the one alert path that still works when the phone is asleep or the app has been force-quit.
+Two more 0.4 settings live where they belong rather than in that card: **auto-block rule expiry** sits with the other auto-block controls (Never / 1 hour / 6 hours / 24 hours / 7 days), and the server's **webhook URL** is in Settings, next to this device's alerts — it is the one alert path that still works when the phone is asleep or the app has been force-quit.
 
 The persistence watcher is one detector under two names: macOS publishes it as `launchItemWatchEnabled` and watches LaunchAgents/LaunchDaemons, Linux and Windows publish `persistenceWatchEnabled` and watch systemd units, cron and autostart entries. The app reads whichever key the server sent, labels the row to match, and writes the same one back — sending the other name comes back as `Unknown setting`, which reads as a toggle that silently does nothing.
 
@@ -114,7 +114,7 @@ Servers older than 0.6.3 send none of these fields, so every badge, sentence and
 
 Every figure is printed as the server formatted it. The server settled the byte convention once (SI, where 1 GB is 1,000,000,000 bytes — what link speeds and data caps use) and a phone re-deriving it would eventually disagree with the console about the same month. The raw numbers are used only to draw. Switching the meter on starts the counters from zero, which the toggle says out loud: turning it on to answer a question about last week cannot work, and the empty chart afterwards would otherwise look like a fault.
 
-**Firewall Config.** Every rule the firewall evaluates, in the order it evaluates them, under More. This is not the existing *Firewall rules* list and the difference is the point: that one is the blocks this app and the prevention engine minted, which is the set you act on during an incident. This one is everything, engine blocks first and then the operator's own rules. A permissive rule sitting above a block is the misconfiguration the screen exists to make visible, and it is invisible in any list that leaves half the rules out. The order is therefore never re-sorted — not by name, not by action, not to group the editable ones.
+**Firewall Config.** Every rule the firewall evaluates, in the order it evaluates them, under Firewall & Block. This is not the existing *Firewall rules* list and the difference is the point: that one is the blocks this app and the prevention engine minted, which is the set you act on during an incident. This one is everything, engine blocks first and then the operator's own rules. A permissive rule sitting above a block is the misconfiguration the screen exists to make visible, and it is invisible in any list that leaves half the rules out. The order is therefore never re-sorted — not by name, not by action, not to group the editable ones.
 
 Rules can be added, edited and removed. On a 0.7.0–0.7.3 server only a rule the operator wrote is editable: an engine block there is lifted by unblocking its address, not by rewriting the rule under it, which would leave the engine believing it still holds a block it no longer has. 0.7.4 lifts that restriction, because the server can then write through whichever backend owns the rule — see below. The console's own allow rule is marked and cannot be removed on any version.
 
@@ -150,19 +150,37 @@ Firewall Config used to list this app's own ledger and nothing else. On a machin
 
 A 0.7.0–0.7.3 server sends no `hostFirewall`, no `listeners` and no `key`, so the screen falls back to exactly what it was: this app's ledger, one list, with only the operator's own rules editable.
 
-0.7.4 also splits a bind `address` out of each `ports` entry, beside the `endpoint` the payload already carried. The app does not decode it: More's *Listening ports* prints `endpoint`, which is that address and the port already joined, and the web console's own Open Ports table still prints the same field.
+0.7.4 also splits a bind `address` out of each `ports` entry, beside the `endpoint` the payload already carried. The app does not decode it: *Open Ports* prints `endpoint`, which is that address and the port already joined, and the web console's own Open Ports table still prints the same field.
 
 **The screen carries the same fields the console and the desktop grid do.** Each rule row prints Label, Action, Protocol, Port range, Sources (Destinations on an outbound rule) and Created by — in the server's own wording, so a rule matching everything reads `All ports` and `All IPv4, All IPv6` rather than as two blank cells, and a long source list wraps instead of being clipped. Above the lists the header says how much of the firewall is this app's: *N from Network Sentinel, M from the rest of the host*, with the scan's own description of what it read and the listener line's *29 listening sockets · 4 reachable from anywhere*.
 
-**And it is a tab, not a page inside More.** The console carries Firewall Config as a section of its own in the navigation rail and the desktop as a view in its menu; on the phone it was two taps down inside More, next to the allowlist and the webhook URL. It is the fourth tab now, on any server that sends `configRules`, and it disappears on one that does not rather than sitting there empty. More keeps a row that jumps to it, since that is where people who already know the old route will look, and the *Firewall rules* list stays where it is — that one is the blocks the engine minted, which is a different list of a different thing.
+**And it is out of More.** The console carries Firewall Config in its navigation rail and the desktop as a view in its menu; on the phone it was two taps down inside More, next to the webhook URL. It is now the first page under the **Firewall & Block** tab — see [Navigation](#navigation-the-consoles-rail-on-a-phone).
 
 **And the same edits.** Edit and Delete sit on the row as buttons rather than only behind a swipe — a swipe is idiomatic but invisible until you try it, and the console and the desktop both put the two verbs where the rule is. Adding asks for a direction first, from the toolbar or from the foot of either list, because that is the first thing a rule is. The form carries the **service presets** both other front-ends fill protocol and port from — SSH, HTTP, HTTPS, DNS, MySQL, PostgreSQL, WireGuard, the web console's own ports, ICMP — and drops back to *Custom* the moment either field is typed over. The address field is headed **Sources** or **Destinations** with the direction, since on an outbound rule the far end is not a source, and the sheet is titled *Add an Inbound Rule* / *Edit an Outbound Rule* the way the console's editor heading is.
 
-The 0.7.4 web console's `blockedCount` is not ported. It is the hero subtitle on a page that has one; the app's blocked addresses are a list you scroll under More, not a number over a banner.
+The 0.7.4 web console's `blockedCount` is not ported. It is the hero subtitle on a page that has one; the app's blocked addresses are a list you scroll under Firewall & Block, not a number over a banner.
+
+### Navigation: the console's rail on a phone
+
+The web console and the desktop carry the same menu, so the app carries it too. Their rail reads **Dashboard · Live Connections · Remote Computers · Break-in Attempts · Open Ports · Firewall & Block** (with *Firewall Config* and *Allowlist* indented under it) **· Settings** (with *Help* under it) — ten entries, which is four more than a tab bar holds. The mapping:
+
+| Console rail | In the app |
+|---|---|
+| Dashboard | **Dashboard** tab |
+| Break-in Attempts | **Break-ins** tab — the screen is titled *Break-in Attempts* |
+| Live Connections · Remote Computers | One **Connections** tab, switched by the picker in its navigation bar; each side keeps the console's title |
+| Firewall & Block | **Firewall** tab, titled *Firewall & Block* |
+| Firewall Config · Open Ports · Allowlist | Rows under Firewall & Block, in that order |
+| Settings | **Settings** tab |
+| Help | A row under Settings, carrying the console's Help page |
+
+Two decisions worth stating. **Live Connections and Remote Computers share a tab** because they are two readings of one question — a host is the actor, a connection is what it is doing right now — and spending two of five slots on that distinction is what would leave the firewall without one. **Open Ports moved into the firewall group** rather than staying beside the settings, because a listening port is something you decide about: the console keeps it immediately above Firewall & Block, and the row under it is one tap from a block.
+
+Tab labels are shortened where the bar would clip them (*Break-ins*, *Connections*, *Firewall*); every screen carries the console's own name in its title, so the vocabulary you learn in the browser is the vocabulary on the phone.
 
 ### Sleep / Wake
 
-The web console's header **Sleep ⇄ Wake** button, in the Status controls and again under More → Monitoring.
+The web console's header **Sleep ⇄ Wake** button, in the Dashboard controls and again under Settings → Monitoring.
 
 Sleeping stops *everything the server watches* — the connection/port poll plus the auth-log, closed-port probe, ARP, startup-item, exfiltration and honeypot watchers, and on 0.6 servers the DNS, WireGuard, Suricata and kernel-event feeds too — so asleep means nothing is observed, not a frozen dashboard. **Firewall blocks stay in force**: sleeping stops watching, it never unblocks an address the machine is already protected from.
 
@@ -183,7 +201,7 @@ They are independent, and the app never changes one when you change the other:
 
 | Toggle | Where | What it does |
 |--------|-------|--------------|
-| **Critical alerts on this device** (More → Alerts) | On the iPhone, stored locally | Local notifications and in-app popups from this app, foreground and via Background App Refresh |
+| **Critical alerts on this device** (Settings → Alerts) | On the iPhone, stored locally | Local notifications and in-app popups from this app, foreground and via Background App Refresh |
 | **Critical alerts on server** (Status → Detection) | On the server, web 0.3.5+ | Desktop notification from the server's GUI, tab badge + browser notification in its web console |
 
 From 0.3.5 each threat also carries a full ISO-8601 `ts`, so the app's notification dedupe keys on the real date. Against older servers only `HH:mm:ss` is available, so it falls back to that.
@@ -239,7 +257,7 @@ console uses.
 
 ### Remote access — HTTPS and DuckDNS (0.5.0)
 
-**More → Remote access** and **Dynamic DNS & certificate** mirror the web console's own settings, because a console you reach from outside the LAN is exactly the one you cannot walk over to and fix.
+**Settings → Remote access** and **Dynamic DNS & certificate** mirror the web console's own settings, because a console you reach from outside the LAN is exactly the one you cannot walk over to and fix.
 
 The section leads with **This connection**, which reports `httpsActive` — what the server is serving right now. Everything below it is configuration: TLS endpoints are bound when the console starts, so the HTTPS switch, port, redirect and certificate/key paths are saved immediately and take effect at the next restart. The server validates a path as soon as it arrives and tries to load the pair, so a bad one is reported here rather than as a console that fails to come back up.
 
@@ -247,7 +265,7 @@ The section leads with **This connection**, which reports `httpsActive` — what
 
 ### Changing the master password
 
-**More → Change master password** calls the 0.3.2+ endpoint. The server keeps this device signed in and revokes every other session; if you saved the password on this device, the Keychain copy is updated so background refresh keeps working.
+**Settings → Change master password** calls the 0.3.2+ endpoint. The server keeps this device signed in and revokes every other session; if you saved the password on this device, the Keychain copy is updated so background refresh keeps working.
 
 ## Requirements
 
@@ -286,7 +304,7 @@ The web UI typically serves **plain HTTP** on the LAN. The app allows arbitrary 
 1. **Add server** — name + base URL (`http://host:port`)
 2. **Setup or sign in** — create master password (first visit) or enter existing one
 3. Optionally **Remember on this device** (Keychain)
-4. Use tabs: Status · Threats · Traffic · Firewall · More — Firewall appears on web 0.7+ servers, and Traffic switches between Hosts and Connections from its navigation bar
+4. Use tabs: Dashboard · Break-ins · Connections · Firewall · Settings — see [Navigation](#navigation-the-consoles-rail-on-a-phone)
 
 ## Project layout
 

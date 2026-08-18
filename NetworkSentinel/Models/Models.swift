@@ -608,7 +608,7 @@ enum BlockVerdict {
     /// Deliberately left alone; `ThreatInfo.blockStatus` names the gate that stopped it.
     case notBlocked
 
-    /// Red for an address being dropped — the same badge the Hosts tab already gives a
+    /// Red for an address being dropped — the same badge Remote Computers already gives a
     /// blocked peer. Amber for the two verdicts that are *not* stopping anything and want
     /// a look; muted for one that was left alone on purpose.
     var tint: Color {

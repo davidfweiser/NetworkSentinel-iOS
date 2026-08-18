@@ -1,11 +1,12 @@
 import SwiftUI
 
-/// Hosts and connections under one tab.
+/// The console's **Live Connections** and **Remote Computers** under one tab.
 ///
-/// They were two tabs answering one question — who is this machine talking to — and the
-/// answer needs both readings: a host is the actor, a connection is what it is doing right
-/// now. Two tabs meant the tab bar spent 40% of itself on that distinction, which is what
-/// left no room for Status, Threats and More to be reachable in one reach.
+/// They are two rail entries there and one tab here, answering one question — who is this
+/// machine talking to — from two sides: a host is the actor, a connection is what it is doing
+/// right now. Two tab slots for that distinction is what would leave the firewall without one.
+/// The picker in the navigation bar is the rail entry; each side carries the console's own
+/// name as its title.
 ///
 /// The switch is a picker in the navigation bar rather than a segmented header, so it costs
 /// no vertical space in a dense table and the search field stays where each list had it.
@@ -23,7 +24,9 @@ struct TrafficView: View {
 }
 
 enum TrafficMode: String, CaseIterable, Identifiable {
-    case hosts = "Hosts"
+    /// The console calls these *Remote Computers* and *Live Connections*. Both names carry in
+    /// the screen titles; the segmented control gets the half of each that fits in 210 points.
+    case hosts = "Computers"
     case connections = "Connections"
 
     var id: String { rawValue }

@@ -10,8 +10,10 @@
 		0C8A3577C99E5A2B5D695815 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB594FE9C08F6FEA200A0FDA /* RootView.swift */; };
 		19E6907F6427C5C3AC57A70F /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2FFB791D1583B17EE570607 /* Theme.swift */; };
 		1EAC1C695D52311BE310C156 /* ActivityChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0B0056D021904EFB326DD0 /* ActivityChart.swift */; };
+		265852E8803044A6B8220657 /* HelpView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02F2CB746C8DEAAAF35C6A64 /* HelpView.swift */; };
 		33C9EFCC44571BD6B15A3AD3 /* FirewallConfigView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48616706D712A2016FB31747 /* FirewallConfigView.swift */; };
 		38D188CF1B276138BB3CC10E /* AuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B8AF44484F464EAD93296DD /* AuthView.swift */; };
+		3CC3E19D91080338A2E76A4A /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5F92F3F8E28DA1D553454D2 /* SettingsView.swift */; };
 		3CE2B8850CC791A3F1019D4E /* BackgroundRefresh.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6EF72769ACEFB56906AE266 /* BackgroundRefresh.swift */; };
 		3F8827A18D76CE316F9E3AD4 /* EnforcementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3C661D68604C75FD779CC3C /* EnforcementView.swift */; };
 		3FF1D7CAD7DCF9D0E235AFB4 /* TrafficView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 704C88C4E01E1C2A2A19EEA1 /* TrafficView.swift */; };
@@ -29,9 +31,9 @@
 		969C8D2776A1C8C9C53CA8A9 /* DetectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90F474836EDE328A55485F93 /* DetectionView.swift */; };
 		A15FD925902247360BE96367 /* CriticalAlertService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A66E61D71D3DDBB16A44B71D /* CriticalAlertService.swift */; };
 		B2EFB650A17035F086427BF2 /* HostsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0C41C43A94E5FC1124AC0D7 /* HostsView.swift */; };
+		C0B4BB70236EFE5EF2EBA0BD /* FirewallBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A131896A9336C386B13DBEE0 /* FirewallBlockView.swift */; };
 		C6A4771FCAC18DF995E192B5 /* ServersListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AE7012AC9352A900E8DE772 /* ServersListView.swift */; };
 		D8586D5CB6D5714865DCC0A1 /* TextSettingEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20AF2EAD58B8DDACB589719 /* TextSettingEditor.swift */; };
-		D90DC36EA940C19F2CC5BCCB /* MoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8030D8B55F5057DCDA4EA02 /* MoreView.swift */; };
 		DFA8DAB9EDF25AB6463FA977 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9423F2F59A1F9BE8C016659C /* KeychainStore.swift */; };
 		E8231F73F0E2F60E3654F833 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 938724AC8BCE8D274BEA33F4 /* APIClient.swift */; };
 		E86441C60E3EAC9699D57181 /* ServerStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 814350F5C5BE3F494DA1BFD7 /* ServerStore.swift */; };
@@ -39,7 +41,8 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		014224BED0A02422C9D2B0DF /* NetworkSentinel.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NetworkSentinel.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		014224BED0A02422C9D2B0DF /* NetworkSentinel.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = NetworkSentinel.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		02F2CB746C8DEAAAF35C6A64 /* HelpView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelpView.swift; sourceTree = "<group>"; };
 		17DBFB1415E5E59D9E624758 /* DataFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataFlowView.swift; sourceTree = "<group>"; };
 		1A0B0056D021904EFB326DD0 /* ActivityChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityChart.swift; sourceTree = "<group>"; };
 		1F580F2DAB752302A83956B6 /* NetworkSentinelApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkSentinelApp.swift; sourceTree = "<group>"; };
@@ -58,6 +61,7 @@
 		938724AC8BCE8D274BEA33F4 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		9423F2F59A1F9BE8C016659C /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
 		A0C41C43A94E5FC1124AC0D7 /* HostsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostsView.swift; sourceTree = "<group>"; };
+		A131896A9336C386B13DBEE0 /* FirewallBlockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirewallBlockView.swift; sourceTree = "<group>"; };
 		A37A8B262875363A4DFBCE8A /* WireGuardPeersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WireGuardPeersView.swift; sourceTree = "<group>"; };
 		A66E61D71D3DDBB16A44B71D /* CriticalAlertService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CriticalAlertService.swift; sourceTree = "<group>"; };
 		B3C661D68604C75FD779CC3C /* EnforcementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnforcementView.swift; sourceTree = "<group>"; };
@@ -67,7 +71,7 @@
 		D20AF2EAD58B8DDACB589719 /* TextSettingEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextSettingEditor.swift; sourceTree = "<group>"; };
 		D2FFB791D1583B17EE570607 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		D8A16E9F38A956081953D91A /* TrafficMeterCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrafficMeterCard.swift; sourceTree = "<group>"; };
-		E8030D8B55F5057DCDA4EA02 /* MoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoreView.swift; sourceTree = "<group>"; };
+		E5F92F3F8E28DA1D553454D2 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		EF3437A8A628A01763AABAA8 /* ConnectionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionsView.swift; sourceTree = "<group>"; };
 		FE8874F597FEA5362A4FDC39 /* ChangePasswordView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChangePasswordView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -155,9 +159,11 @@
 				17DBFB1415E5E59D9E624758 /* DataFlowView.swift */,
 				90F474836EDE328A55485F93 /* DetectionView.swift */,
 				B3C661D68604C75FD779CC3C /* EnforcementView.swift */,
+				A131896A9336C386B13DBEE0 /* FirewallBlockView.swift */,
 				48616706D712A2016FB31747 /* FirewallConfigView.swift */,
+				02F2CB746C8DEAAAF35C6A64 /* HelpView.swift */,
 				A0C41C43A94E5FC1124AC0D7 /* HostsView.swift */,
-				E8030D8B55F5057DCDA4EA02 /* MoreView.swift */,
+				E5F92F3F8E28DA1D553454D2 /* SettingsView.swift */,
 				8019D66FF8F2EA7A6B8D210B /* StatusView.swift */,
 				4532945338DDCF9B2A15610A /* ThreatsView.swift */,
 				704C88C4E01E1C2A2A19EEA1 /* TrafficView.swift */,
@@ -203,6 +209,11 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 2600;
+				TargetAttributes = {
+					17858BC7CB8C9C61259205B9 = {
+						DevelopmentTeam = R27KU7BQMW;
+					};
+				};
 			};
 			buildConfigurationList = DC9C563397F7292E26B81B15 /* Build configuration list for PBXProject "NetworkSentinel" */;
 			developmentRegion = en;
@@ -250,16 +261,18 @@
 				7C6DA2CCD1DEA6A218AB9CC2 /* DataFlowView.swift in Sources */,
 				969C8D2776A1C8C9C53CA8A9 /* DetectionView.swift in Sources */,
 				3F8827A18D76CE316F9E3AD4 /* EnforcementView.swift in Sources */,
+				C0B4BB70236EFE5EF2EBA0BD /* FirewallBlockView.swift in Sources */,
 				33C9EFCC44571BD6B15A3AD3 /* FirewallConfigView.swift in Sources */,
+				265852E8803044A6B8220657 /* HelpView.swift in Sources */,
 				B2EFB650A17035F086427BF2 /* HostsView.swift in Sources */,
 				DFA8DAB9EDF25AB6463FA977 /* KeychainStore.swift in Sources */,
 				8D6E9D9B1A16B3EF3F5A20BD /* Models.swift in Sources */,
-				D90DC36EA940C19F2CC5BCCB /* MoreView.swift in Sources */,
 				7E4C3E5FE6439119D85ED3F7 /* NetworkSentinelApp.swift in Sources */,
 				78E58F9A8CDCB1F85BAC5B35 /* OnboardingView.swift in Sources */,
 				0C8A3577C99E5A2B5D695815 /* RootView.swift in Sources */,
 				E86441C60E3EAC9699D57181 /* ServerStore.swift in Sources */,
 				C6A4771FCAC18DF995E192B5 /* ServersListView.swift in Sources */,
+				3CC3E19D91080338A2E76A4A /* SettingsView.swift in Sources */,
 				52CCA490177FAB0E428657EC /* StatusView.swift in Sources */,
 				D8586D5CB6D5714865DCC0A1 /* TextSettingEditor.swift in Sources */,
 				19E6907F6427C5C3AC57A70F /* Theme.swift in Sources */,
@@ -309,7 +322,7 @@
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 5;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = R27KU7BQMW;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
@@ -351,7 +364,6 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = NetworkSentinel/NetworkSentinel.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = R27KU7BQMW;
 				INFOPLIST_FILE = NetworkSentinel/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Network Sentinel";
 				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads = YES;
@@ -403,7 +415,7 @@
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 5;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = R27KU7BQMW;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
@@ -438,7 +450,6 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = NetworkSentinel/NetworkSentinel.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = R27KU7BQMW;
 				INFOPLIST_FILE = NetworkSentinel/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Network Sentinel";
 				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads = YES;

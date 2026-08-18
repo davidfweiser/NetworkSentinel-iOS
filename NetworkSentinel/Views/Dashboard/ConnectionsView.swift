@@ -50,7 +50,7 @@ struct ConnectionsView: View {
             }
             .nsSleepAware(model.isAsleep) { Task { await model.wakeConsole() } }
             .background { AmbientField() }
-            .navigationTitle("Connections")
+            .navigationTitle("Live Connections")
             .navigationBarTitleDisplayMode(mode == nil ? .automatic : .inline)
             .searchable(text: $query, prompt: "Process, IP, state")
             .toolbar {
