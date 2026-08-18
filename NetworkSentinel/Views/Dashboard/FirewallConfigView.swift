@@ -41,7 +41,7 @@ struct FirewallConfigView: View {
         /// silently rewrite the other. A seeded add is identified by what seeded it, so
         /// tapping a second listener re-opens the sheet on that socket rather than the first.
         var id: String {
-            rule?.id ?? "new|\(prefill?.protocolName ?? "")|\(prefill?.ports ?? "")"
+            rule?.id ?? "new|\(prefill?.direction.rawValue ?? "")|\(prefill?.protocolName ?? "")|\(prefill?.ports ?? "")"
         }
     }
 
@@ -66,8 +66,11 @@ struct FirewallConfigView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    editing = EditorTarget(rule: nil, prefill: nil, seedNote: nil)
+                // Two entry points, not one: the direction is the first thing a rule is, and
+                // both other front-ends ask for it before the form opens rather than inside it.
+                Menu {
+                    Button("Add an Inbound Rule") { addRule(.inbound) }
+                    Button("Add an Outbound Rule") { addRule(.outbound) }
                 } label: {
                     Image(systemName: "plus")
                 }
@@ -132,6 +135,15 @@ struct FirewallConfigView: View {
                 }
                 .listRowBackground(NSTheme.row)
 
+                // "(12 from Network Sentinel, 30 from the rest of the host)" — the sentence
+                // the console and the desktop both carry, and the one that says at a glance
+                // how much of this firewall this app is responsible for.
+                Text(ownershipSummary)
+                    .font(.caption)
+                    .foregroundStyle(NSTheme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .listRowBackground(NSTheme.row)
+
                 LabeledContent {
                     Text(host.defaultInbound ?? "?")
                         .font(.caption.monospaced())
@@ -171,6 +183,11 @@ struct FirewallConfigView: View {
                 Text("Host firewall")
             } footer: {
                 VStack(alignment: .leading, spacing: 4) {
+                    // What the scan actually read, in the server's words — the sentence the
+                    // payload has always carried and this screen used to drop on the floor.
+                    if let description = host.description, !description.isEmpty {
+                        Text(description)
+                    }
                     Text(defaultPolicySentence(host))
                     // The scan is cached on the server so the 2.5s poll does not shell out to
                     // ufw and nft four times a second. Pulling to refresh re-reads state, not
@@ -215,6 +232,14 @@ struct FirewallConfigView: View {
                     row(rule)
                 }
             }
+
+            Button {
+                addRule(title == "Outbound" ? .outbound : .inbound)
+            } label: {
+                Label("Add an \(title) Rule", systemImage: "plus.circle")
+            }
+            .tint(NSTheme.accent)
+            .listRowBackground(NSTheme.row)
         } header: {
             HStack {
                 Text(title)
@@ -255,7 +280,7 @@ struct FirewallConfigView: View {
                 Text(rule.label ?? rule.name)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(NSTheme.text)
-                    .lineLimit(1)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 Spacer(minLength: 6)
 
@@ -266,27 +291,42 @@ struct FirewallConfigView: View {
                 }
             }
 
-            Text(rule.matchSummary)
-                .font(.caption.monospaced())
-                .foregroundStyle(NSTheme.muted)
-                .lineLimit(2)
-
+            // Protocol · Port range, then the address list under its own heading. Both are
+            // printed in the server's own words — `All ports`, `All IPv4, All IPv6` — because
+            // an empty cell reads as "nothing here" where the rule means "everything".
             HStack(spacing: 8) {
+                Text("\(rule.protocolText) · \(rule.portsText)")
+                    .font(.caption.monospaced())
+                    .foregroundStyle(NSTheme.accent)
+                Spacer(minLength: 0)
                 Label(
                     rule.direction ?? ((rule.inbound ?? true) ? "Inbound" : "Outbound"),
                     systemImage: (rule.inbound ?? true) ? "arrow.down.right" : "arrow.up.right"
                 )
                 .font(.caption2)
-                .foregroundStyle(NSTheme.accent)
+                .foregroundStyle(NSTheme.muted)
+            }
 
-                if let origin = rule.origin, !origin.isEmpty {
-                    // Who wrote it. On 0.7.4 this is the column that separates our own rules
-                    // from UFW's and Docker's, so it is worth more than grey on a foreign row.
-                    Text(origin)
-                        .font(.caption2)
-                        .foregroundStyle(rule.isForeignRule ? NSTheme.signal : NSTheme.muted)
-                        .lineLimit(1)
-                }
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(rule.addressHeading)
+                    .font(.caption2)
+                    .foregroundStyle(NSTheme.muted)
+                // Never truncated: a UFW rule's source list is the half of the row that
+                // decides who the rule is about, and the grid on the other two shows it whole.
+                Text(rule.addressesText)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(NSTheme.text)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+
+            HStack(spacing: 8) {
+                // Who wrote it. On 0.7.4 this is the column that separates our own rules
+                // from UFW's and Docker's, so it is worth more than grey on a foreign row.
+                Text("Created by \(rule.originText)")
+                    .font(.caption2)
+                    .foregroundStyle(rule.isForeignRule ? NSTheme.signal : NSTheme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 if let expiry = rule.expiry, !expiry.isEmpty, expiry != "Permanent" {
                     Label(expiry, systemImage: "clock")
@@ -296,6 +336,30 @@ struct FirewallConfigView: View {
                 }
 
                 Spacer(minLength: 0)
+
+                // The web page and the desktop grid both put Edit and Delete on the row
+                // itself. A swipe is the iOS idiom, but it is also invisible until you try
+                // it, and a screen that can be edited should look like one.
+                if rule.isProtectedRule {
+                    // Says why this row has no buttons, where the buttons would have been —
+                    // the console's actions column carries the same word for the same reason.
+                    Text("not removable")
+                        .font(.caption2)
+                        .foregroundStyle(NSTheme.muted)
+                } else {
+                    if rule.isEditable {
+                        Button("Edit") {
+                            editing = EditorTarget(rule: rule, prefill: nil, seedNote: nil)
+                        }
+                        .font(.caption2.weight(.semibold))
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(NSTheme.accent)
+                    }
+                    Button("Delete") { pendingRemoval = rule }
+                        .font(.caption2.weight(.semibold))
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(NSTheme.danger)
+                }
             }
         }
         .padding(.vertical, 2)
@@ -397,6 +461,7 @@ struct FirewallConfigView: View {
                 }
             } footer: {
                 VStack(alignment: .leading, spacing: 4) {
+                    Text(listenerSummary)
                     Text("What is accepting connections, and what the inbound rules do to traffic arriving at it. Open means reachable from anywhere; Local only means bound to this machine; Not allowed means nothing admits it, however loudly it is listening.")
                     // The point of listing the sockets beside the rules: a rule here is written
                     // against one of them, and reading the port off a terminal to retype it is
@@ -405,6 +470,30 @@ struct FirewallConfigView: View {
                 }
             }
         }
+    }
+
+    /// Opens the editor on a blank rule in one direction. The direction is chosen before the
+    /// sheet rather than inside it, which is how both other front-ends ask for it.
+    private func addRule(_ direction: FirewallRuleDraft.Direction) {
+        var draft = FirewallRuleDraft()
+        draft.direction = direction
+        editing = EditorTarget(rule: nil, prefill: draft, seedNote: nil)
+    }
+
+    /// How much of this firewall this app wrote, and how much of it belongs to everything else.
+    private var ownershipSummary: String {
+        let mine = rules.filter { !$0.isForeignRule }.count
+        let theirs = rules.count - mine
+        return "\(mine) from Network Sentinel, \(theirs) from the rest of the host."
+    }
+
+    /// The listener line both other front-ends print above their table: how many sockets, and
+    /// how many of them anyone can reach.
+    private var listenerSummary: String {
+        if listeners.isEmpty { return "No listening sockets were readable." }
+        let open = listeners.filter { $0.exposure == .open }.count
+        let plural = listeners.count == 1 ? "" : "s"
+        return "\(listeners.count) listening socket\(plural) · \(open) reachable from anywhere"
     }
 
     /// Opens the rule editor on the rule a listening socket argues for.
@@ -492,6 +581,10 @@ struct FirewallRuleEditor: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var draft: FirewallRuleDraft
+    /// The service the protocol and port fields currently spell out, or `Custom`. It follows
+    /// the fields rather than owning them: typing over either drops the picker back to Custom,
+    /// which is what the desktop's `_suppressPresetHandler` dance amounts to.
+    @State private var preset: String = FirewallRuleDraft.presetCustom
     @State private var saving = false
     /// The server's refusal, kept on the sheet. Dismissing on a failed save would look
     /// exactly like a successful one.
@@ -502,7 +595,16 @@ struct FirewallRuleEditor: View {
         self.seedNote = seedNote
         // A prefill only ever accompanies an add — there is no rule whose values it would be
         // overriding — but the order says which wins if that ever stops being true.
-        _draft = State(initialValue: prefill ?? rule?.draft ?? FirewallRuleDraft())
+        let initial = prefill ?? rule?.draft ?? FirewallRuleDraft()
+        _draft = State(initialValue: initial)
+        _preset = State(initialValue: FirewallRuleDraft.presetMatching(
+            protocolName: initial.protocolName, ports: initial.ports))
+    }
+
+    /// "Add an Inbound Rule" / "Edit an Outbound Rule" — the same title the web console writes
+    /// into its editor heading and the desktop into its card.
+    private var title: String {
+        "\(isEditing ? "Edit" : "Add") an \(draft.direction.rawValue) Rule"
     }
 
     private var isEditing: Bool { rule != nil }
@@ -551,7 +653,7 @@ struct FirewallRuleEditor: View {
                 }
 
                 Section {
-                    TextField("Label", text: $draft.label)
+                    TextField("block-inbound-ssh   (optional)", text: $draft.label)
                         .foregroundStyle(NSTheme.text)
                         .listRowBackground(NSTheme.row)
                 } footer: {
@@ -559,6 +661,19 @@ struct FirewallRuleEditor: View {
                 }
 
                 Section {
+                    // Fills protocol and port from a well-known service, exactly as the web
+                    // console's Preset select and the desktop's Preset combo do.
+                    Picker("Preset", selection: $preset) {
+                        Text(FirewallRuleDraft.presetCustom).tag(FirewallRuleDraft.presetCustom)
+                        ForEach(FirewallRuleDraft.presets) { Text($0.name).tag($0.name) }
+                    }
+                    .listRowBackground(NSTheme.row)
+                    .onChange(of: preset) { _, name in
+                        guard let match = FirewallRuleDraft.presets.first(where: { $0.name == name }) else { return }
+                        draft.protocolName = match.protocolName
+                        draft.ports = match.ports
+                    }
+
                     Picker("Action", selection: $draft.action) {
                         ForEach(FirewallRuleDraft.Action.allCases) { Text($0.rawValue).tag($0) }
                     }
@@ -575,6 +690,7 @@ struct FirewallRuleEditor: View {
                         ForEach(FirewallRuleDraft.protocols, id: \.self) { Text($0).tag($0) }
                     }
                     .listRowBackground(NSTheme.row)
+                    .onChange(of: draft.protocolName) { _, _ in syncPreset() }
                 } footer: {
                     Text(draft.direction == .inbound
                          ? "Inbound matches the source address of traffic arriving at this machine."
@@ -582,14 +698,15 @@ struct FirewallRuleEditor: View {
                 }
 
                 Section {
-                    TextField("22, 8000-8001", text: $draft.ports)
+                    TextField("22   or  8000-8001   or  80, 443", text: $draft.ports)
                         .font(.system(size: 15).monospaced())
                         .foregroundStyle(NSTheme.text)
                         .keyboardType(.numbersAndPunctuation)
                         .autocorrectionDisabled()
                         .listRowBackground(NSTheme.row)
+                        .onChange(of: draft.ports) { _, _ in syncPreset() }
                 } header: {
-                    Text("Ports")
+                    Text("Port range")
                 } footer: {
                     // The empty case is the dangerous one, so it is the one spelled out.
                     Text(draft.ports.trimmingCharacters(in: .whitespaces).isEmpty
@@ -598,14 +715,16 @@ struct FirewallRuleEditor: View {
                 }
 
                 Section {
-                    TextField("Any address", text: $draft.addresses)
+                    TextField("All IPv4, All IPv6   or  10.0.0.0/8", text: $draft.addresses)
                         .font(.system(size: 15).monospaced())
                         .foregroundStyle(NSTheme.text)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .listRowBackground(NSTheme.row)
                 } header: {
-                    Text("Addresses")
+                    // "Sources" reads wrong on an outbound rule, where the field is the far
+                    // end — both other front-ends swap the word with the direction.
+                    Text(draft.direction == .outbound ? "Destinations" : "Sources")
                 } footer: {
                     Text(FirewallRuleDraft.isAnyAddress(draft.addresses)
                          ? "Empty matches every address, IPv4 and IPv6."
@@ -632,20 +751,27 @@ struct FirewallRuleEditor: View {
             }
             .scrollContentBackground(.hidden)
             .background { AmbientField() }
-            .navigationTitle(isEditing ? "Edit rule" : "New rule")
+            .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button(isEditing ? "Save" : "Add") { Task { await save() } }
+                    Button(isEditing ? "Save Rule" : "Add Rule") { Task { await save() } }
                         .disabled(blocker != nil || saving)
                         .fontWeight(.semibold)
                 }
             }
         }
         .interactiveDismissDisabled(saving)
+    }
+
+    /// Keeps the preset name honest after the fields it filled in are edited by hand.
+    private func syncPreset() {
+        let match = FirewallRuleDraft.presetMatching(
+            protocolName: draft.protocolName, ports: draft.ports)
+        if match != preset { preset = match }
     }
 
     private func save() async {

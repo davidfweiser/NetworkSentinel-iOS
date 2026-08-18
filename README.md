@@ -153,6 +153,10 @@ A 0.7.0–0.7.3 server sends no `hostFirewall`, no `listeners` and no `key`, so 
 
 0.7.4 also splits a bind `address` out of each `ports` entry, beside the `endpoint` the payload already carried. The app does not decode it: More's *Listening ports* prints `endpoint`, which is that address and the port already joined, and the web console's own Open Ports table still prints the same field.
 
+**The screen carries the same fields the console and the desktop grid do.** Each rule row prints Label, Action, Protocol, Port range, Sources (Destinations on an outbound rule) and Created by — in the server's own wording, so a rule matching everything reads `All ports` and `All IPv4, All IPv6` rather than as two blank cells, and a long source list wraps instead of being clipped. Above the lists the header says how much of the firewall is this app's: *N from Network Sentinel, M from the rest of the host*, with the scan's own description of what it read and the listener line's *29 listening sockets · 4 reachable from anywhere*.
+
+**And the same edits.** Edit and Delete sit on the row as buttons rather than only behind a swipe — a swipe is idiomatic but invisible until you try it, and the console and the desktop both put the two verbs where the rule is. Adding asks for a direction first, from the toolbar or from the foot of either list, because that is the first thing a rule is. The form carries the **service presets** both other front-ends fill protocol and port from — SSH, HTTP, HTTPS, DNS, MySQL, PostgreSQL, WireGuard, the web console's own ports, ICMP — and drops back to *Custom* the moment either field is typed over. The address field is headed **Sources** or **Destinations** with the direction, since on an outbound rule the far end is not a source, and the sheet is titled *Add an Inbound Rule* / *Edit an Outbound Rule* the way the console's editor heading is.
+
 The 0.7.4 web console's `blockedCount` is not ported. It is the hero subtitle on a page that has one; the app's blocked addresses are a list you scroll under More, not a number over a banner.
 
 ### Sleep / Wake

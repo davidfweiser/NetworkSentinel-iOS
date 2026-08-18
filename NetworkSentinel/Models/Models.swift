@@ -1053,6 +1053,33 @@ struct ConfigRuleInfo: Codable, Identifiable {
     /// unrestricted cases — `All IPv4, All IPv6` and `All ports` — and "every port" is the
     /// half worth spelling out, because a rule with no port is the one that does more than it
     /// looks like it does.
+    /// The six columns the web console and the desktop grid print, each in the server's own
+    /// wording. A blank cell is not the same reading as "every port" or "every address", and
+    /// leaving one out is how this screen ended up showing less than the other two.
+    var protocolText: String {
+        let text = (protocolName ?? "").trimmingCharacters(in: .whitespaces)
+        return text.isEmpty ? "Any" : text
+    }
+
+    var portsText: String {
+        let text = (ports ?? "").trimmingCharacters(in: .whitespaces)
+        return text.isEmpty ? "All ports" : text
+    }
+
+    var addressesText: String {
+        let text = (addresses ?? "").trimmingCharacters(in: .whitespaces)
+        return text.isEmpty ? "All IPv4, All IPv6" : text
+    }
+
+    /// "Sources" reads wrong on an outbound rule, where the field is the far end. Both other
+    /// front-ends swap the word with the direction; so does this one.
+    var addressHeading: String { (inbound ?? true) ? "Sources" : "Destinations" }
+
+    var originText: String {
+        let text = (origin ?? "").trimmingCharacters(in: .whitespaces)
+        return text.isEmpty ? "—" : text
+    }
+
     var matchSummary: String {
         var parts: [String] = []
         let proto = protocolName ?? ""
@@ -1123,6 +1150,44 @@ struct FirewallRuleDraft: Equatable {
 
     /// The server's list, in its order. `Any` is last because it is the widest.
     static let protocols = ["TCP", "UDP", "ICMP", "Any"]
+
+    /// Protocol and port for a well-known service, as the web console's `RULE_PRESETS` and the
+    /// desktop's `RulePresets` list them — same names, same order, so a rule written from a
+    /// preset on a phone is the rule the console would have written.
+    ///
+    /// The desktop carries one the web console does not (the console's own ports); it is kept,
+    /// because a rule about the port this app is talking over is worth being able to name.
+    struct Preset: Identifiable, Equatable {
+        let name: String
+        let protocolName: String
+        let ports: String
+        var id: String { name }
+    }
+
+    static let presetCustom = "Custom"
+
+    static let presets: [Preset] = [
+        Preset(name: "SSH (22/tcp)", protocolName: "TCP", ports: "22"),
+        Preset(name: "HTTP (80/tcp)", protocolName: "TCP", ports: "80"),
+        Preset(name: "HTTPS (443/tcp)", protocolName: "TCP", ports: "443"),
+        Preset(name: "DNS (53/udp)", protocolName: "UDP", ports: "53"),
+        Preset(name: "MySQL (3306/tcp)", protocolName: "TCP", ports: "3306"),
+        Preset(name: "PostgreSQL (5432/tcp)", protocolName: "TCP", ports: "5432"),
+        Preset(name: "WireGuard (51820/udp)", protocolName: "UDP", ports: "51820"),
+        Preset(name: "Web console (18765,18443/tcp)", protocolName: "TCP", ports: "18765, 18443"),
+        Preset(name: "ICMP (ping)", protocolName: "ICMP", ports: "")
+    ]
+
+    /// The preset these values *are*, so the picker keeps saying so while the fields hold what
+    /// it filled in, and drops back to Custom the moment either is typed over.
+    static func presetMatching(protocolName: String, ports: String) -> String {
+        let typed = ports.trimmingCharacters(in: .whitespaces)
+        let match = presets.first {
+            $0.protocolName.caseInsensitiveCompare(protocolName) == .orderedSame
+                && $0.ports.caseInsensitiveCompare(typed) == .orderedSame
+        }
+        return match?.name ?? presetCustom
+    }
 
     var label: String = ""
     var action: Action = .block
