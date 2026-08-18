@@ -628,6 +628,10 @@ struct FirewallRuleEditor: View {
     let rule: ConfigRuleInfo?
     /// Why the fields came filled in, when they did. Nil for a plain add or an edit.
     let seedNote: String?
+    /// What the socket filled in. The note names a protocol and a port, so it stops being
+    /// true the moment either is edited — the web console leaves its own note standing there
+    /// claiming port 22 over a form that now says 443.
+    private let seedShape: (protocolName: String, ports: String)?
 
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
@@ -648,16 +652,16 @@ struct FirewallRuleEditor: View {
         // A prefill only ever accompanies an add — there is no rule whose values it would be
         // overriding — but the order says which wins if that ever stops being true.
         let initial = prefill ?? rule?.draft ?? FirewallRuleDraft()
+        seedShape = prefill.map { ($0.protocolName, $0.ports) }
         _draft = State(initialValue: initial)
         _preset = State(initialValue: FirewallRuleDraft.presetMatching(
             protocolName: initial.protocolName, ports: initial.ports))
     }
 
-    /// "Add an Inbound Rule" / "Edit an Outbound Rule" — the same title the web console writes
-    /// into its editor heading and the desktop into its card.
-    private var title: String {
-        "\(isEditing ? "Edit" : "Add") an \(draft.direction.rawValue) Rule"
-    }
+    /// The console's editor heading is "Add an Inbound Rule"; a phone's inline title bar has
+    /// Cancel on one side and Add Rule on the other and clips that to "Add an Inbound R…".
+    /// The direction is the half worth keeping — the verb is on the button beside it.
+    private var title: String { "\(draft.direction.rawValue) Rule" }
 
     private var isEditing: Bool { rule != nil }
     private var validationError: String? { draft.validationError }
@@ -686,7 +690,7 @@ struct FirewallRuleEditor: View {
     var body: some View {
         NavigationStack {
             List {
-                if let seedNote {
+                if let seedNote, stillSeeded {
                     Section {
                         Label(seedNote, systemImage: "antenna.radiowaves.left.and.right")
                             .font(.system(size: 12))
@@ -817,6 +821,12 @@ struct FirewallRuleEditor: View {
             }
         }
         .interactiveDismissDisabled(saving)
+    }
+
+    /// True while the form still holds what the listening socket put there.
+    private var stillSeeded: Bool {
+        guard let seedShape else { return false }
+        return draft.protocolName == seedShape.protocolName && draft.ports == seedShape.ports
     }
 
     /// Keeps the preset name honest after the fields it filled in are edited by hand.
