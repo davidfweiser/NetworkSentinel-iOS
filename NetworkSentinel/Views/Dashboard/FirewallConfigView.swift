@@ -405,6 +405,14 @@ struct FirewallConfigView: View {
 
                 Spacer(minLength: 6)
 
+                if let scope = rule.profileScope, !scope.isEmpty {
+                    // Only ever set on a rule live on less than the whole machine, so it is
+                    // worth the width when it appears at all.
+                    Text(scope)
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(NSTheme.signal)
+                }
+
                 if let copies = rule.copiesText {
                     Text(copies)
                         .font(.caption2.monospaced())

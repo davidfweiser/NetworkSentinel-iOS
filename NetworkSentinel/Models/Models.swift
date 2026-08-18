@@ -1016,11 +1016,15 @@ struct ConfigRuleInfo: Codable, Identifiable {
     /// profile and per protocol, so a single "allow SSH" arrives as four; the server folds them
     /// and says how many it folded rather than printing the same row four times.
     let copies: Int?
+    /// Which network profiles the rule is live on — "Domain", "Private, Public" — and empty
+    /// when it is live on all of them, which is most rules. Sent by a Windows server from
+    /// 0.7.5, where folding a rule stored once per profile made the union worth stating.
+    let profileScope: String?
 
     enum CodingKeys: String, CodingKey {
         case name, key, label, isProtected, isCustom, isForeign, inbound, action, direction
         case protocolName = "protocol"
-        case ports, addresses, origin, expiry, copies
+        case ports, addresses, origin, expiry, copies, profileScope
     }
 
     /// "×4" for a row standing in for four identical rules, nil for an ordinary one.
