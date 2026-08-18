@@ -978,7 +978,7 @@ final class AppModel {
         await runAction("save_config_rule", rule: rule, replacing: replacing, ruleKey: ruleKey)
     }
 
-    // MARK: Host firewall (web 0.7.3+)
+    // MARK: Host firewall (web 0.7.4+)
 
     /// Removes a rule the host owns — UFW's, Docker's, anyone's — by its shape.
     ///

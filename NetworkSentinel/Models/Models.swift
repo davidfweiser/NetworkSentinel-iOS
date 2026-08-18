@@ -76,24 +76,24 @@ struct ServerState: Codable {
     /// The firewall ledger in evaluation order — web ≥ 0.7.0. Distinct from
     /// `firewallRules`, which is only the blocks this app and the engine minted.
     ///
-    /// On web ≥ 0.7.3 this is no longer a ledger but a scan of the whole host firewall —
+    /// On web ≥ 0.7.4 this is no longer a ledger but a scan of the whole host firewall —
     /// UFW's rules, WireGuard's, Docker's and this app's, in one list. The shape is
-    /// unchanged, so a 0.7.0–0.7.2 server still decodes; what changes is how much of the
+    /// unchanged, so a 0.7.0–0.7.3 server still decodes; what changes is how much of the
     /// machine it describes, and that a row may now belong to something else entirely.
     let configRules: [ConfigRuleInfo]?
     /// What the scan found the host firewall to *be* — backend, status, default policies —
-    /// web ≥ 0.7.3. Absent on older servers, where `configRules` is the app's own ledger and
+    /// web ≥ 0.7.4. Absent on older servers, where `configRules` is the app's own ledger and
     /// there is no host-wide reading to report.
     let hostFirewall: HostFirewallInfo?
     /// Every socket accepting connections on the host, and whether the firewall admits it —
-    /// web ≥ 0.7.3. Distinct from `ports`, which is the monitor's own view of listening
+    /// web ≥ 0.7.4. Distinct from `ports`, which is the monitor's own view of listening
     /// ports and says nothing about whether they are reachable.
     let listeners: [HostListener]?
 }
 
-/// The host firewall as one reading — web ≥ 0.7.3.
+/// The host firewall as one reading — web ≥ 0.7.4.
 ///
-/// Before 0.7.3 the Firewall Config screen showed this app's ledger and nothing else, which
+/// Before 0.7.4 the Firewall Config screen showed this app's ledger and nothing else, which
 /// on a UFW box is a near-empty page sitting beside a firewall full of rules. The server now
 /// reads `ufw status verbose`, `nft -j list ruleset`, `iptables -S` and `ss -tulpnH` and
 /// folds them into one list. This is the header for that list: which backend actually owns
@@ -146,7 +146,7 @@ struct HostFirewallInfo: Codable {
 }
 
 /// A socket listening on the host, and what the firewall does to traffic arriving at it —
-/// web ≥ 0.7.3.
+/// web ≥ 0.7.4.
 ///
 /// A listener the firewall does not admit is not reachable however loudly it is listening,
 /// and a listener nothing covers is the one worth knowing about. That is the whole reason
@@ -189,6 +189,56 @@ struct HostListener: Codable, Identifiable {
         case "no firewall": return .none
         default: return .unknown
         }
+    }
+
+    /// The port as a single number, or nil when the scan could only label it — `ss` prints a
+    /// name for some kernel sockets, and a rule cannot be written against a name.
+    var portNumber: Int? {
+        let text = (port ?? "").trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty, text.allSatisfy(\.isWholeNumber) else { return nil }
+        return Int(text)
+    }
+
+    /// `sshd on 0.0.0.0:22` — who is listening and where, for the note on a rule seeded from
+    /// this socket. The server's GUI and web console build the same phrase from the same
+    /// fields, so an operator moving between the three reads one sentence about one socket.
+    var describedSource: String {
+        let name = (process ?? "").trimmingCharacters(in: .whitespaces)
+        let who = name.isEmpty || name == "—" ? "an unidentified process" : name
+        let bind = (address ?? "").trimmingCharacters(in: .whitespaces)
+        let place = bind.isEmpty ? "port \(port ?? "?")" : "\(bind):\(port ?? "?")"
+        return "\(who) on \(place)"
+    }
+
+    /// The rule this socket argues for — web ≥ 0.7.4's *New rule* on a listening row.
+    ///
+    /// Protocol and port carry over. The bind address deliberately does not: Addresses on an
+    /// inbound rule matches the *far end* of a connection, so seeding it with `0.0.0.0`, `::`
+    /// or this host's own LAN address would write a rule matching nothing an attacker sends.
+    ///
+    /// Nil when the port is not a plain number, because a form opened on an unparseable port
+    /// is worse than no form — the server would refuse it after the round trip.
+    var newRuleDraft: FirewallRuleDraft? {
+        guard let portNumber else { return nil }
+        var draft = FirewallRuleDraft()
+        draft.direction = .inbound
+        draft.protocolName = (protocolName ?? "").caseInsensitiveCompare("UDP") == .orderedSame ? "UDP" : "TCP"
+        draft.ports = String(portNumber)
+        return draft
+    }
+
+    /// Why the fields arrived filled in, and why one of them did not.
+    var newRuleNote: String? {
+        guard let draft = newRuleDraft else { return nil }
+        return "Writes a rule for \(draft.protocolName) port \(draft.ports), which \(describedSource) is "
+             + "listening on. Addresses is left empty (every address) — it matches the remote end, not the "
+             + "address the service is bound to. Applying needs root or pkexec/sudo on the server."
+    }
+
+    /// What to say instead of opening a form on a port that is not a number.
+    var newRuleRefusal: String {
+        "“\(port ?? "")” is not a single port number, so there is nothing to prefill — write the "
+        + "rule by hand with Add rule."
     }
 }
 
@@ -903,7 +953,7 @@ struct TrafficBucket: Codable, Identifiable {
 /// A permissive operator rule sitting above a block is the bug this list exists to make
 /// visible, and it is invisible in a set that leaves half the rules out.
 struct ConfigRuleInfo: Codable, Identifiable {
-    /// The rule's whole shape, hashed into one string by the server — web ≥ 0.7.3.
+    /// The rule's whole shape, hashed into one string by the server — web ≥ 0.7.4.
     ///
     /// Names are not unique across a host: two UFW rules can both be called
     /// `allow-inbound-ssh`, and once the list stopped being this app's private ledger the
@@ -911,7 +961,7 @@ struct ConfigRuleInfo: Codable, Identifiable {
     /// else, and the server refuses an ambiguous match rather than guessing which of two
     /// identical rules to remove.
     let key: String?
-    /// Identity for the list. The key when the server sends one, the name on a 0.7.0–0.7.2
+    /// Identity for the list. The key when the server sends one, the name on a 0.7.0–0.7.3
     /// server that has no keys — where the list *is* this app's ledger and names are unique.
     var id: String { (key?.isEmpty == false ? key : nil) ?? name }
     /// The server's own handle for the rule. Still what `remove_rule` and the `replace` field
@@ -925,7 +975,7 @@ struct ConfigRuleInfo: Codable, Identifiable {
     /// True for a rule the operator wrote in Firewall Config, false for one the engine minted.
     let isCustom: Bool?
     /// True for a rule read out of the kernel that this app did not write — UFW's, Docker's,
-    /// WireGuard's — web ≥ 0.7.3. It can still be edited and removed, but the write goes out
+    /// WireGuard's — web ≥ 0.7.4. It can still be edited and removed, but the write goes out
     /// through whichever backend owns it, and an edit is a delete-and-rewrite rather than an
     /// edit in place.
     let isForeign: Bool?
@@ -948,22 +998,22 @@ struct ConfigRuleInfo: Codable, Identifiable {
 
     var isAllow: Bool { (action ?? "").caseInsensitiveCompare("Allow") == .orderedSame }
     var isProtectedRule: Bool { isProtected == true }
-    /// A rule the host owns rather than this app — web ≥ 0.7.3.
+    /// A rule the host owns rather than this app — web ≥ 0.7.4.
     var isForeignRule: Bool { isForeign == true }
 
-    /// Everything but the console's own allow rule can be edited on 0.7.3, where the server
+    /// Everything but the console's own allow rule can be edited on 0.7.4, where the server
     /// can write through UFW as well as its own table. On an older server the list is this
     /// app's ledger and only the operator's own rules are rewritable — an engine block there
     /// is lifted by unblocking its address, not by rewriting the rule underneath it, which
     /// would leave the engine believing it still holds a block it no longer has.
     ///
-    /// `key` is the probe for which server this is: only 0.7.3 sends one.
+    /// `key` is the probe for which server this is: only 0.7.4 sends one.
     var isEditable: Bool {
         guard !isProtectedRule else { return false }
         return key?.isEmpty == false || isCustom == true
     }
 
-    /// True once the server identifies rules by shape — web ≥ 0.7.3.
+    /// True once the server identifies rules by shape — web ≥ 0.7.4.
     ///
     /// It is the probe for the whole host-firewall API: where there is a key there is a
     /// `delete_host_rule` that takes it, and removal goes that way for *every* rule rather

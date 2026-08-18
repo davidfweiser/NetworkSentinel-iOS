@@ -18,22 +18,22 @@ Connect to one or more hosts running the headless web UI (`-w` / `--web`), sign 
 | **Signatures** | Suricata EVE ingestion — feed path, maximum severity, muted signature ids (web 0.6+) |
 | **Threats** | Severity filters, search, clear alerts, block source IP — each row saying whether that IP is actually blocked (web 0.6.3+) |
 | **Data flow** | Bandwidth meter on Status: live in/out rates, this month a day at a time, the year a month at a time (web 0.7+) |
-| **Firewall Config** | The whole host firewall — UFW's rules, WireGuard's, Docker's and this app's — in evaluation order, with add / edit / remove, the default policies, and what is listening behind them (web 0.7+; host-wide on 0.7.3+) |
+| **Firewall Config** | The whole host firewall — UFW's rules, WireGuard's, Docker's and this app's — in evaluation order, with add / edit / remove, the default policies, and what is listening behind them — tap a listening socket to start a rule for it (web 0.7+; host-wide on 0.7.4+) |
 | **Hosts** | Remote peers with geo/threat badges; swipe to block/unblock |
 | **Connections** | Live process + endpoint table; block remote peers |
 | **More** | Listening ports, firewall rules, allowlist add/remove/refresh, server webhook URL, HTTPS + DuckDNS remote access and certificate issuance, change master password |
 | **Alerts** | Time-sensitive notifications and in-app popups for Critical threats, leading with whether the address was blocked (web 0.6.3+), with catch-up on launch |
 | **Secure storage** | Session tokens & optional remembered passwords in Keychain |
 
-Talks to the same JSON API as the browser console (Linux, Windows & macOS web **0.3.x – 0.7.x**, current through **0.7.3**):
+Talks to the same JSON API as the browser console (Linux, Windows & macOS web **0.3.x – 0.7.x**, current through **0.7.4**):
 
 - `GET /api/auth/status`
 - `POST /api/auth/login` · `/api/auth/setup` · `/api/auth/logout`
 - `POST /api/auth/change-password` (0.3.2+) — `currentPassword`, `newPassword`, `confirm`
-- `GET /api/state` (settings include `geoLookupEnabled` / `allowlistUseRemoteFeed` / `authLogMonitorEnabled` + `authLogStatus` / `probeLogEnabled` + `probeLogStatus` / `criticalAlertsEnabled`, on 0.4+ the intrusion-detection group, on 0.5+ the HTTPS/DuckDNS group, and on 0.6+ `preventionDryRun` / `conntrackEventsEnabled` / the DNS, WireGuard and Suricata groups, on 0.6.3+ `autoBlockSummary`, on 0.7+ `trafficMeterEnabled` + `trafficStatus`; threats include `ts` and on 0.6.3+ `blockStatus` / `blockShort` / `blocked`; rules include `isProtected`, `address`, `ports`; on 0.7+ the top-level `traffic` and `configRules`; on 0.7.3+ the top-level `hostFirewall` and `listeners`, and `configRules` entries gain `key` and `isForeign`)
+- `GET /api/state` (settings include `geoLookupEnabled` / `allowlistUseRemoteFeed` / `authLogMonitorEnabled` + `authLogStatus` / `probeLogEnabled` + `probeLogStatus` / `criticalAlertsEnabled`, on 0.4+ the intrusion-detection group, on 0.5+ the HTTPS/DuckDNS group, and on 0.6+ `preventionDryRun` / `conntrackEventsEnabled` / the DNS, WireGuard and Suricata groups, on 0.6.3+ `autoBlockSummary`, on 0.7+ `trafficMeterEnabled` + `trafficStatus`; threats include `ts` and on 0.6.3+ `blockStatus` / `blockShort` / `blocked`; rules include `isProtected`, `address`, `ports`; on 0.7+ the top-level `traffic` and `configRules`; on 0.7.4+ the top-level `hostFirewall` and `listeners`, and `configRules` entries gain `key` and `isForeign`)
 - `POST /api/action` — `block`, `unblock`, `set_setting`, `block_port`, `unblock_port`, `remove_rule`, `remove_all_rules`, allowlist, auto-block, …
-- `POST /api/action` — `save_config_rule` (web 0.7+) — `label`, `ruleAction`, `direction`, `protocol`, `ports`, `addresses`, and `replace` when editing rather than adding; on 0.7.3+ `key` instead of `replace` when the rule being edited belongs to the host
-- `POST /api/action` — `delete_host_rule` (`key`) and `rescan_firewall` (web 0.7.3+)
+- `POST /api/action` — `save_config_rule` (web 0.7+) — `label`, `ruleAction`, `direction`, `protocol`, `ports`, `addresses`, and `replace` when editing rather than adding; on 0.7.4+ `key` instead of `replace` when the rule being edited belongs to the host
+- `POST /api/action` — `delete_host_rule` (`key`) and `rescan_firewall` (web 0.7.4+)
 - `POST /api/action` — `sleep` / `wake` (web 0.5.1+), falling back to the `pause` / `resume` names every 0.3–0.5.0 server drives the same monitor state under
 - `POST /api/action` — `issue_cert` (web 0.5+)
 
@@ -117,7 +117,7 @@ Every figure is printed as the server formatted it. The server settled the byte 
 
 **Firewall Config.** Every rule the firewall evaluates, in the order it evaluates them, under More. This is not the existing *Firewall rules* list and the difference is the point: that one is the blocks this app and the prevention engine minted, which is the set you act on during an incident. This one is everything, engine blocks first and then the operator's own rules. A permissive rule sitting above a block is the misconfiguration the screen exists to make visible, and it is invisible in any list that leaves half the rules out. The order is therefore never re-sorted — not by name, not by action, not to group the editable ones.
 
-Rules can be added, edited and removed. On a 0.7.0–0.7.2 server only a rule the operator wrote is editable: an engine block there is lifted by unblocking its address, not by rewriting the rule under it, which would leave the engine believing it still holds a block it no longer has. 0.7.3 lifts that restriction, because the server can then write through whichever backend owns the rule — see below. The console's own allow rule is marked and cannot be removed on any version.
+Rules can be added, edited and removed. On a 0.7.0–0.7.3 server only a rule the operator wrote is editable: an engine block there is lifted by unblocking its address, not by rewriting the rule under it, which would leave the engine believing it still holds a block it no longer has. 0.7.4 lifts that restriction, because the server can then write through whichever backend owns the rule — see below. The console's own allow rule is marked and cannot be removed on any version.
 
 **The server owns validation, and the form mirrors only part of it.** `save_config_rule` revalidates everything, and the guard against writing a rule that cuts off the console stays server-side because only the server knows which ports it listens on. What the form checks locally is the purely textual half — port tokens, ranges, addresses and CIDR blocks — so a typo is caught while the keyboard is still up. Two shapes are refused before sending: an Allow rule with protocol Any, no port and no address (which allows everything), and an inbound catch-all Block (which takes the machine off the network, this app's connection with it). A refusal from the server leaves the sheet open with its own wording on it; dismissing would look exactly like a rule that had been written.
 
@@ -125,9 +125,11 @@ Validation order matters and reversing it is dangerous rather than untidy: norma
 
 0.7.2's upgrade banner is deliberately not ported. It fixes a browser-only problem — an open tab keeps the markup it was served, so a console upgraded underneath it silently lacks the new UI. The app re-decodes `/api/state` on every poll and has no stale markup to reconcile.
 
-### The whole host firewall (0.7.3)
+### The whole host firewall (0.7.4)
 
-Firewall Config used to list this app's own ledger and nothing else. On a machine running UFW that is a near-empty page sitting beside a firewall full of rules — and the rules Network Sentinel wrote were invisible in `ufw status` in turn, so neither view was the firewall. 0.7.3 makes the server read all of it: `ufw status verbose`, `nft -j list ruleset` keeping each handle, `iptables -S`, and `ss -tulpnH`. UFW's helper chains and the established/loopback boilerplate fold out; UFW's rules, WireGuard's, Docker's and ours fold into one list, each row tagged with who wrote it. One machine has one firewall, and both front-ends now show it.
+**It is 0.7.4, not 0.7.3.** The rebuild was written against a 0.7.3 tree, but 0.7.3 was packaged and installed before it merged, so no build carrying that number has it — the server re-released the same work as 0.7.4 rather than let two different binaries claim one version. A server reporting 0.7.3 behaves like 0.7.2 here. None of it is version-sniffed either way: every screen below keys off whether the fields arrive.
+
+Firewall Config used to list this app's own ledger and nothing else. On a machine running UFW that is a near-empty page sitting beside a firewall full of rules — and the rules Network Sentinel wrote were invisible in `ufw status` in turn, so neither view was the firewall. 0.7.4 makes the server read all of it: `ufw status verbose`, `nft -j list ruleset` keeping each handle, `iptables -S`, and `ss -tulpnH`. UFW's helper chains and the established/loopback boilerplate fold out; UFW's rules, WireGuard's, Docker's and ours fold into one list, each row tagged with who wrote it. One machine has one firewall, and both front-ends now show it.
 
 **The screen leads with what the machine is.** Backend, whether it is switched on, and the default policies, because the default is what decides how every Allow row below it should be read: under a default of Drop an Allow rule is what makes a service reachable at all, under Accept it only opens a path through the rules above it. The same header carries the privilege note — the scans are inspections that never raise a password dialog, so an unelevated server still answers, with a short list and a line saying that is why. A short list is not an empty firewall and the two are not shown as though they were.
 
@@ -139,11 +141,19 @@ Firewall Config used to list this app's own ledger and nothing else. On a machin
 
 **Listening** sits under the rules, and the pairing is the reading. The rules say what the firewall would do; the listener list says what is actually accepting connections. A listener the firewall does not admit is not reachable however loudly it is listening, and a listener nothing covers is the row to read first. Each one carries the server's own verdict — Open, Restricted, Not allowed, Local only, No firewall.
 
+**One row per bind address, and a rule can be started from any of them.** The list is the set `ss -tuln` prints, bind addresses included, so a service like NetBIOS shows its separate rows on `0.0.0.0`, the LAN address and the broadcast address rather than one collapsed entry — which of them is listening is the thing a rule is written about. Tapping a row, or swiping it, opens the rule sheet on that socket: inbound, its protocol, its port. That is the point of listing the sockets next to the rules, since the alternative is reading the port off `ss` in a terminal and retyping it, which is how a port goes missing from the rule set.
+
+**The bind address deliberately does not carry into Addresses**, and the sheet says so where the empty field is. On an inbound rule that field matches the *far end* of a connection, so seeding it with `0.0.0.0`, `::` or this host's own LAN address would write a rule matching nothing an attacker sends. A socket whose port is not a plain number — `ss` labels some kernel sockets rather than numbering them — has nothing to prefill, so the tap is answered with that sentence instead of a form the server would refuse a round trip later.
+
+**Listeners arrive even when no firewall could be read.** They come from `ss`, which needs no privilege, so an unprivileged server and a host with no firewall configured both still send the inventory, each row carrying a **No firewall** verdict. The section is therefore drawn empty rather than hidden on a 0.7.4 server that reports none — "nothing is listening" and "the screen has nothing to say" are different readings and should not look the same.
+
 **Rescan is separate from pull-to-refresh, because they do different things.** The scan shells out to four tools, and `/api/state` is polled every couple of seconds, so the server caches it. Pulling to refresh re-reads the server's cached scan; Rescan re-reads the kernel. Every write invalidates the cache server-side, so Rescan is for the case where something else changed the firewall underneath the app.
 
-A 0.7.0–0.7.2 server sends no `hostFirewall`, no `listeners` and no `key`, so the screen falls back to exactly what it was: this app's ledger, one list, with only the operator's own rules editable.
+A 0.7.0–0.7.3 server sends no `hostFirewall`, no `listeners` and no `key`, so the screen falls back to exactly what it was: this app's ledger, one list, with only the operator's own rules editable.
 
-The 0.7.3 web console's `blockedCount` is not ported. It is the hero subtitle on a page that has one; the app's blocked addresses are a list you scroll under More, not a number over a banner.
+0.7.4 also splits a bind `address` out of each `ports` entry, beside the `endpoint` the payload already carried. The app does not decode it: More's *Listening ports* prints `endpoint`, which is that address and the port already joined, and the web console's own Open Ports table still prints the same field.
+
+The 0.7.4 web console's `blockedCount` is not ported. It is the hero subtitle on a page that has one; the app's blocked addresses are a list you scroll under More, not a number over a banner.
 
 ### Sleep / Wake
 

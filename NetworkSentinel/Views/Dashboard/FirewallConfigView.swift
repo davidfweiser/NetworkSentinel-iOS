@@ -1,13 +1,13 @@
 import SwiftUI
 
-/// The host firewall — web 0.7's Firewall Config tab, as 0.7.3 rewrote it.
+/// The host firewall — web 0.7's Firewall Config tab, as 0.7.4 rewrote it.
 ///
 /// This is not the same list as More's *Firewall rules*, and the difference is the point.
 /// That one is the blocks this app and the prevention engine minted, which is the set you act
-/// on during an incident. This one is *the firewall*: on web 0.7.3 the server reads
+/// on during an incident. This one is *the firewall*: on web 0.7.4 the server reads
 /// `ufw status verbose`, `nft -j list ruleset`, `iptables -S` and `ss -tulpnH` and folds UFW's
 /// rules, WireGuard's, Docker's and this app's into a single list. One machine has one
-/// firewall, and before 0.7.3 both front-ends showed a fraction of it and called it the whole.
+/// firewall, and before 0.7.4 both front-ends showed a fraction of it and called it the whole.
 ///
 /// Order within a direction is never re-sorted — not by name, not by action, not to put the
 /// editable rules together. The server sends evaluation order and evaluation order is the
@@ -24,21 +24,32 @@ struct FirewallConfigView: View {
     @State private var editing: EditorTarget?
     @State private var pendingRemoval: ConfigRuleInfo?
     @State private var rescanning = false
+    /// Set when a listening row has nothing to prefill. Both other front-ends answer the same
+    /// tap with a sentence rather than an editor full of an unparseable port.
+    @State private var prefillRefusal: String?
 
     /// What the editor sheet was opened for. `rule` is nil when adding.
     struct EditorTarget: Identifiable {
         let rule: ConfigRuleInfo?
-        /// The rule's own identity, which on 0.7.3 is its shape rather than its name — two
+        /// Values the sheet opens on instead of a rule's — a rule seeded from a listening
+        /// socket, which has no rule behind it to edit.
+        var prefill: FirewallRuleDraft?
+        /// Why those values are already in the fields, said on the sheet that has them.
+        var seedNote: String?
+        /// The rule's own identity, which on 0.7.4 is its shape rather than its name — two
         /// UFW rules can share a name, and opening the editor on the wrong one of them would
-        /// silently rewrite the other.
-        var id: String { rule?.id ?? "new" }
+        /// silently rewrite the other. A seeded add is identified by what seeded it, so
+        /// tapping a second listener re-opens the sheet on that socket rather than the first.
+        var id: String {
+            rule?.id ?? "new|\(prefill?.protocolName ?? "")|\(prefill?.ports ?? "")"
+        }
     }
 
     private var rules: [ConfigRuleInfo] { model.state?.configRules ?? [] }
     private var inbound: [ConfigRuleInfo] { rules.filter { $0.inbound ?? true } }
     private var outbound: [ConfigRuleInfo] { rules.filter { !($0.inbound ?? true) } }
     private var listeners: [HostListener] { model.state?.listeners ?? [] }
-    /// Absent on web 0.7.0–0.7.2, where `configRules` is this app's ledger and there is no
+    /// Absent on web 0.7.0–0.7.3, where `configRules` is this app's ledger and there is no
     /// host-wide reading to report.
     private var host: HostFirewallInfo? { model.state?.hostFirewall }
 
@@ -56,7 +67,7 @@ struct FirewallConfigView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
-                    editing = EditorTarget(rule: nil)
+                    editing = EditorTarget(rule: nil, prefill: nil, seedNote: nil)
                 } label: {
                     Image(systemName: "plus")
                 }
@@ -64,7 +75,7 @@ struct FirewallConfigView: View {
             }
         }
         .sheet(item: $editing) { target in
-            FirewallRuleEditor(rule: target.rule)
+            FirewallRuleEditor(rule: target.rule, prefill: target.prefill, seedNote: target.seedNote)
                 .preferredColorScheme(.dark)
         }
         .confirmationDialog(
@@ -86,6 +97,17 @@ struct FirewallConfigView: View {
             Button("Cancel", role: .cancel) { pendingRemoval = nil }
         } message: {
             Text(pendingRemoval.map(removalWarning) ?? "")
+        }
+        .alert(
+            "Nothing to prefill",
+            isPresented: Binding(
+                get: { prefillRefusal != nil },
+                set: { if !$0 { prefillRefusal = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { prefillRefusal = nil }
+        } message: {
+            Text(prefillRefusal ?? "")
         }
         .refreshable { await model.refresh(silent: false) }
     }
@@ -258,7 +280,7 @@ struct FirewallConfigView: View {
                 .foregroundStyle(NSTheme.accent)
 
                 if let origin = rule.origin, !origin.isEmpty {
-                    // Who wrote it. On 0.7.3 this is the column that separates our own rules
+                    // Who wrote it. On 0.7.4 this is the column that separates our own rules
                     // from UFW's and Docker's, so it is worth more than grey on a foreign row.
                     Text(origin)
                         .font(.caption2)
@@ -280,7 +302,7 @@ struct FirewallConfigView: View {
         .listRowBackground(NSTheme.row)
         .contentShape(.rect)
         .onTapGesture {
-            if rule.isEditable { editing = EditorTarget(rule: rule) }
+            if rule.isEditable { editing = EditorTarget(rule: rule, prefill: nil, seedNote: nil) }
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: !rule.isProtectedRule) {
             if !rule.isProtectedRule {
@@ -292,7 +314,7 @@ struct FirewallConfigView: View {
             }
             if rule.isEditable {
                 Button {
-                    editing = EditorTarget(rule: rule)
+                    editing = EditorTarget(rule: rule, prefill: nil, seedNote: nil)
                 } label: {
                     Label("Edit", systemImage: "pencil")
                 }
@@ -307,10 +329,24 @@ struct FirewallConfigView: View {
     ///
     /// A listener bound to every interface that the firewall does not admit is fine; the same
     /// listener with nothing covering it is the row this list exists for.
+    ///
+    /// One row per bind address, not per port — the same set `ss -tuln` prints — so a service
+    /// like NetBIOS shows its rows on `0.0.0.0`, the LAN address and the broadcast address
+    /// rather than one collapsed entry. Which of them is listening is the question a rule is
+    /// written about.
+    ///
+    /// The list is empty rather than absent on a 0.7.4 server that could not read a firewall
+    /// backend at all: the listeners come from `ss`, which needs no privilege, so an
+    /// unprivileged run still has an inventory even when it has no rules.
     @ViewBuilder
     private var listenersSection: some View {
-        if !listeners.isEmpty {
+        if !listeners.isEmpty || host != nil {
             Section {
+                if listeners.isEmpty {
+                    Text("No listening sockets reported.")
+                        .foregroundStyle(NSTheme.muted)
+                        .listRowBackground(NSTheme.row)
+                }
                 ForEach(listeners) { listener in
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 6) {
@@ -342,6 +378,16 @@ struct FirewallConfigView: View {
                     }
                     .padding(.vertical, 2)
                     .listRowBackground(NSTheme.row)
+                    .contentShape(.rect)
+                    .onTapGesture { startRule(for: listener) }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button {
+                            startRule(for: listener)
+                        } label: {
+                            Label("New rule", systemImage: "plus")
+                        }
+                        .tint(NSTheme.accent)
+                    }
                 }
             } header: {
                 HStack {
@@ -350,9 +396,27 @@ struct FirewallConfigView: View {
                     Text("\(listeners.count)")
                 }
             } footer: {
-                Text("What is accepting connections, and what the inbound rules do to traffic arriving at it. Open means reachable from anywhere; Local only means bound to this machine; Not allowed means nothing admits it, however loudly it is listening.")
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("What is accepting connections, and what the inbound rules do to traffic arriving at it. Open means reachable from anywhere; Local only means bound to this machine; Not allowed means nothing admits it, however loudly it is listening.")
+                    // The point of listing the sockets beside the rules: a rule here is written
+                    // against one of them, and reading the port off a terminal to retype it is
+                    // how a port goes missing from the rule set.
+                    Text("One row per bind address. Tap a row — or swipe it — to start an inbound rule for that socket's protocol and port.")
+                }
             }
         }
+    }
+
+    /// Opens the rule editor on the rule a listening socket argues for.
+    ///
+    /// A socket whose port is not a plain number has nothing to fill in, so the tap is answered
+    /// with the reason rather than a form the server would refuse after the round trip.
+    private func startRule(for listener: HostListener) {
+        guard let draft = listener.newRuleDraft, let note = listener.newRuleNote else {
+            prefillRefusal = listener.newRuleRefusal
+            return
+        }
+        editing = EditorTarget(rule: nil, prefill: draft, seedNote: note)
     }
 
     private func exposureColor(_ exposure: HostListener.Exposure) -> Color {
@@ -387,7 +451,7 @@ struct FirewallConfigView: View {
         if rule.hasHostKey, let key = rule.key {
             await model.deleteHostRule(key: key)
         } else {
-            // Pre-0.7.3: the list is this app's ledger and the name is the handle.
+            // Pre-0.7.4: the list is this app's ledger and the name is the handle.
             await model.removeRule(named: rule.name)
         }
     }
@@ -421,6 +485,8 @@ struct FirewallConfigView: View {
 /// to reject.
 struct FirewallRuleEditor: View {
     let rule: ConfigRuleInfo?
+    /// Why the fields came filled in, when they did. Nil for a plain add or an edit.
+    let seedNote: String?
 
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
@@ -431,9 +497,12 @@ struct FirewallRuleEditor: View {
     /// exactly like a successful one.
     @State private var serverError: String?
 
-    init(rule: ConfigRuleInfo?) {
+    init(rule: ConfigRuleInfo?, prefill: FirewallRuleDraft? = nil, seedNote: String? = nil) {
         self.rule = rule
-        _draft = State(initialValue: rule?.draft ?? FirewallRuleDraft())
+        self.seedNote = seedNote
+        // A prefill only ever accompanies an add — there is no rule whose values it would be
+        // overriding — but the order says which wins if that ever stops being true.
+        _draft = State(initialValue: prefill ?? rule?.draft ?? FirewallRuleDraft())
     }
 
     private var isEditing: Bool { rule != nil }
@@ -463,6 +532,15 @@ struct FirewallRuleEditor: View {
     var body: some View {
         NavigationStack {
             List {
+                if let seedNote {
+                    Section {
+                        Label(seedNote, systemImage: "antenna.radiowaves.left.and.right")
+                            .font(.system(size: 12))
+                            .foregroundStyle(NSTheme.signal)
+                            .listRowBackground(NSTheme.row)
+                    }
+                }
+
                 if let foreignEditNote {
                     Section {
                         Label(foreignEditNote, systemImage: "arrow.triangle.swap")
