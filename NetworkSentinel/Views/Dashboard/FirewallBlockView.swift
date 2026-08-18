@@ -1,20 +1,15 @@
 import SwiftUI
 
-/// **Firewall & Block** — the console's own section, with the same pages under it.
+/// **Firewall & Block** — the console page of that name, one tap inside the Firewall tab.
 ///
-/// The web console's navigation rail carries *Firewall & Block* with *Firewall Config* and
-/// *Allowlist* indented beneath it and *Open Ports* immediately above; the desktop's menu is
-/// the same shape. On the phone those four were scattered, three of them inside More next to
-/// the webhook URL and this app's own notification settings — which is where a setting goes,
-/// not where the firewall goes.
-///
-/// This screen is that group. It carries what the console's Firewall & Block page carries —
-/// the blocks this app and the prevention engine minted, one row per block, manual IP
-/// blocking, the elevation prompt, Remove all — and holds the three pages that sit under it.
+/// The blocks this app and the prevention engine minted, one row per block, with manual IP
+/// blocking, the elevation prompt and Remove all. The console's rail puts this above Firewall
+/// Config and the app's tab opens on Firewall Config instead, because the whole host firewall
+/// is the bigger reading; this is the list you act on during an incident, reached from there.
 ///
 /// It is deliberately not the same list as Firewall Config. That one is every rule the kernel
-/// evaluates, whoever wrote it; this one is the set you act on during an incident. Folding
-/// them together is what would hide a permissive rule sitting above a block.
+/// evaluates, whoever wrote it. Folding them together is what would hide a permissive rule
+/// sitting above a block.
 struct FirewallBlockView: View {
     @Environment(AppModel.self) private var model
 
@@ -24,105 +19,61 @@ struct FirewallBlockView: View {
     @State private var confirmRemoveAll = false
 
     var body: some View {
-        NavigationStack {
-            List {
-                Section {
-                    NavigationLink {
-                        FirewallConfigView()
-                    } label: {
-                        navRow("Firewall Config", "shield.lefthalf.filled",
-                               count: model.state?.configRules?.count)
-                    }
-                    .listRowBackground(NSTheme.row)
-                    .disabled(model.state?.configRules == nil)
-
-                    NavigationLink {
-                        OpenPortsView()
-                    } label: {
-                        navRow("Open Ports", "point.3.filled.connected.trianglepath.dotted",
-                               count: model.state?.ports?.count)
-                    }
-                    .listRowBackground(NSTheme.row)
-
-                    NavigationLink {
-                        AllowlistView()
-                    } label: {
-                        navRow("Allowlist", "checkmark.shield",
-                               count: model.state?.allowlist?.count)
-                    }
-                    .listRowBackground(NSTheme.row)
-                } footer: {
-                    Text("Firewall Config is every rule the firewall evaluates, in evaluation order, with the listening sockets under it — on web 0.7+ servers only. Open Ports is what this machine is listening on, one tap from a block. The allowlist is never auto-blocked.")
-                }
-
-                firewallRulesSection
-            }
-            .scrollContentBackground(.hidden)
-            .background { AmbientField() }
-            .navigationTitle("Firewall & Block")
-            .alert("Block an IP", isPresented: $showBlockIP) {
-                TextField("IP address", text: $blockIPText)
-                    .keyboardType(.numbersAndPunctuation)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                Button("Block", role: .destructive) {
-                    let ip = blockIPText.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !ip.isEmpty else { return }
-                    Task {
-                        await model.requestBlock(ip: ip)
-                        blockIPText = ""
-                    }
-                }
-                Button("Cancel", role: .cancel) { blockIPText = "" }
-            } message: {
-                Text("Writes an inbound and outbound block rule on the server, the same as the web console’s Block IP.")
-            }
-            .confirmationDialog(
-                "Remove all Network Sentinel firewall rules?",
-                isPresented: $confirmRemoveAll,
-                titleVisibility: .visible
-            ) {
-                Button("Remove all", role: .destructive) {
-                    Task { await model.removeAllRules() }
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("Deletes managed IP/port rules. The web console’s protected allow rule is left alone when possible.")
-            }
-            .confirmationDialog(
-                "Remove this firewall rule?",
-                isPresented: Binding(
-                    get: { pendingRuleRemoval != nil },
-                    set: { if !$0 { pendingRuleRemoval = nil } }
-                ),
-                titleVisibility: .visible
-            ) {
-                if let group = pendingRuleRemoval {
-                    Button("Remove \(group.primary.displayAddress)", role: .destructive) {
-                        Task { await model.removeRule(named: group.primary.name) }
-                        pendingRuleRemoval = nil
-                    }
-                    Button("Cancel", role: .cancel) { pendingRuleRemoval = nil }
-                }
-            } message: {
-                Text("Lifts the block: the server deletes the inbound and outbound rules together and holds auto-block off this target for 24 hours.")
-            }
-            .refreshable { await model.refresh(silent: false) }
+        List {
+            firewallRulesSection
         }
-    }
-
-    /// One row of the group, with what it holds — the count is the reading that says whether
-    /// opening it is worth the tap.
-    private func navRow(_ title: String, _ symbol: String, count: Int?) -> some View {
-        HStack {
-            Label(title, systemImage: symbol)
-            Spacer(minLength: 8)
-            if let count {
-                Text("\(count)")
-                    .font(.caption.monospaced())
-                    .foregroundStyle(NSTheme.muted)
+        .scrollContentBackground(.hidden)
+        .background { AmbientField() }
+        .navigationTitle("Firewall & Block")
+        .navigationBarTitleDisplayMode(.inline)
+        .alert("Block an IP", isPresented: $showBlockIP) {
+            TextField("IP address", text: $blockIPText)
+                .keyboardType(.numbersAndPunctuation)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            Button("Block", role: .destructive) {
+                let ip = blockIPText.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !ip.isEmpty else { return }
+                Task {
+                    await model.requestBlock(ip: ip)
+                    blockIPText = ""
+                }
             }
+            Button("Cancel", role: .cancel) { blockIPText = "" }
+        } message: {
+            Text("Writes an inbound and outbound block rule on the server, the same as the web console’s Block IP.")
         }
+        .confirmationDialog(
+            "Remove all Network Sentinel firewall rules?",
+            isPresented: $confirmRemoveAll,
+            titleVisibility: .visible
+        ) {
+            Button("Remove all", role: .destructive) {
+                Task { await model.removeAllRules() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Deletes managed IP/port rules. The web console’s protected allow rule is left alone when possible.")
+        }
+        .confirmationDialog(
+            "Remove this firewall rule?",
+            isPresented: Binding(
+                get: { pendingRuleRemoval != nil },
+                set: { if !$0 { pendingRuleRemoval = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let group = pendingRuleRemoval {
+                Button("Remove \(group.primary.displayAddress)", role: .destructive) {
+                    Task { await model.removeRule(named: group.primary.name) }
+                    pendingRuleRemoval = nil
+                }
+                Button("Cancel", role: .cancel) { pendingRuleRemoval = nil }
+            }
+        } message: {
+            Text("Lifts the block: the server deletes the inbound and outbound rules together and holds auto-block off this target for 24 hours.")
+        }
+        .refreshable { await model.refresh(silent: false) }
     }
 
     @ViewBuilder

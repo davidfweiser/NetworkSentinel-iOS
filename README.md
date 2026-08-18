@@ -18,7 +18,7 @@ Connect to one or more hosts running the headless web UI (`-w` / `--web`), sign 
 | **Signatures** | Suricata EVE ingestion — feed path, maximum severity, muted signature ids (web 0.6+) |
 | **Break-in Attempts** | Severity filters, search, clear alerts, block source IP — each row saying whether that IP is actually blocked (web 0.6.3+) |
 | **Data flow** | Bandwidth meter on Dashboard: live in/out rates, this month a day at a time, the year a month at a time (web 0.7+) |
-| **Firewall & Block** | Its own tab, with the console's three pages under it — **Firewall Config**, **Open Ports**, **Allowlist** — over the managed blocks, manual IP blocking, *Authorize firewall* and *Remove all*. Firewall Config is the whole host firewall — UFW's rules, WireGuard's, Docker's and this app's — in evaluation order, with add / edit / remove, service presets, the default policies, and what is listening behind them; tap a listening socket to start a rule for it (web 0.7+; host-wide on 0.7.4+) |
+| **Firewall** | Opens on **Firewall Config**, with **Firewall & Block** (managed blocks, manual IP blocking, *Authorize firewall*, *Remove all*), **Open Ports** and **Allowlist** a tap inside it. Firewall Config is the whole host firewall — UFW's rules, WireGuard's, Docker's and this app's — in evaluation order, with add / edit / remove, service presets, the default policies, and what is listening behind them; tap a listening socket to start a rule for it (web 0.7+; host-wide on 0.7.4+) |
 | **Connections** | One tab, two readings of who this machine is talking to, switched by a picker in the navigation bar: **Remote Computers** — peers with geo/threat badges, swipe to block/unblock — and **Live Connections** — the process + endpoint table, with blocking on the row |
 | **Settings** | Which server this is, sign-out and master password, this device's alerts and background polling, the server's webhook URL, HTTPS + DuckDNS remote access and certificate issuance, and **Help** |
 | **Alerts** | Time-sensitive notifications and in-app popups for Critical threats, leading with whether the address was blocked (web 0.6.3+), with catch-up on launch |
@@ -154,11 +154,11 @@ A 0.7.0–0.7.3 server sends no `hostFirewall`, no `listeners` and no `key`, so 
 
 **The screen carries the same fields the console and the desktop grid do.** Each rule row prints Label, Action, Protocol, Port range, Sources (Destinations on an outbound rule) and Created by — in the server's own wording, so a rule matching everything reads `All ports` and `All IPv4, All IPv6` rather than as two blank cells, and a long source list wraps instead of being clipped. Above the lists the header says how much of the firewall is this app's: *N from Network Sentinel, M from the rest of the host*, with the scan's own description of what it read and the listener line's *29 listening sockets · 4 reachable from anywhere*.
 
-**And it is out of More.** The console carries Firewall Config in its navigation rail and the desktop as a view in its menu; on the phone it was two taps down inside More, next to the webhook URL. It is now the first page under the **Firewall & Block** tab — see [Navigation](#navigation-the-consoles-rail-on-a-phone).
+**And it is out of More.** The console carries Firewall Config in its navigation rail and the desktop as a view in its menu; on the phone it was two taps down inside More, next to the webhook URL. It is the **Firewall** tab now — see [Navigation](#navigation-the-consoles-rail-on-a-phone).
 
 **And the same edits.** Edit and Delete sit on the row as buttons rather than only behind a swipe — a swipe is idiomatic but invisible until you try it, and the console and the desktop both put the two verbs where the rule is. Adding asks for a direction first, from the toolbar or from the foot of either list, because that is the first thing a rule is. The form carries the **service presets** both other front-ends fill protocol and port from — SSH, HTTP, HTTPS, DNS, MySQL, PostgreSQL, WireGuard, the web console's own ports, ICMP — and drops back to *Custom* the moment either field is typed over. The address field is headed **Sources** or **Destinations** with the direction, since on an outbound rule the far end is not a source, and the sheet is titled *Add an Inbound Rule* / *Edit an Outbound Rule* the way the console's editor heading is.
 
-The 0.7.4 web console's `blockedCount` is not ported. It is the hero subtitle on a page that has one; the app's blocked addresses are a list you scroll under Firewall & Block, not a number over a banner.
+The 0.7.4 web console's `blockedCount` is not ported. It is the hero subtitle on a page that has one; the app's blocked addresses are a list you scroll under Firewall & Block, one tap inside the Firewall tab, not a number over a banner.
 
 ### Navigation: the console's rail on a phone
 
@@ -169,12 +169,14 @@ The web console and the desktop carry the same menu, so the app carries it too. 
 | Dashboard | **Dashboard** tab |
 | Break-in Attempts | **Break-ins** tab — the screen is titled *Break-in Attempts* |
 | Live Connections · Remote Computers | One **Connections** tab, switched by the picker in its navigation bar; each side keeps the console's title |
-| Firewall & Block | **Firewall** tab, titled *Firewall & Block* |
-| Firewall Config · Open Ports · Allowlist | Rows under Firewall & Block, in that order |
+| Firewall Config | **Firewall** tab — the whole host firewall is what the tab opens on |
+| Firewall & Block · Open Ports · Allowlist | Rows at the top of it, in that order |
 | Settings | **Settings** tab |
 | Help | A row under Settings, carrying the console's Help page |
 
-Two decisions worth stating. **Live Connections and Remote Computers share a tab** because they are two readings of one question — a host is the actor, a connection is what it is doing right now — and spending two of five slots on that distinction is what would leave the firewall without one. **Open Ports moved into the firewall group** rather than staying beside the settings, because a listening port is something you decide about: the console keeps it immediately above Firewall & Block, and the row under it is one tap from a block.
+Three decisions worth stating. **Live Connections and Remote Computers share a tab** because they are two readings of one question — a host is the actor, a connection is what it is doing right now — and spending two of five slots on that distinction is what would leave the firewall without one. **Open Ports moved into the firewall group** rather than staying beside the settings, because a listening port is something you decide about: the console keeps it immediately above Firewall & Block, and every row there is one tap from a block.
+
+And the group is entered from the **opposite end to the console's**. The rail indents Firewall Config under Firewall & Block; the tab opens on Firewall Config, with Firewall & Block a row inside it. A phone has one tab for the group and the whole host firewall is the bigger reading — the console's page shows this app's own blocks, and on a UFW box that is a fraction of the rules the kernel is evaluating. The blocks are still there, one tap in, which is the list you want during an incident. On a server older than 0.7 there is no Firewall Config page in the console either, so the tab opens on Firewall & Block instead.
 
 Tab labels are shortened where the bar would clip them (*Break-ins*, *Connections*, *Firewall*); every screen carries the console's own name in its title, so the vocabulary you learn in the browser is the vocabulary on the phone.
 

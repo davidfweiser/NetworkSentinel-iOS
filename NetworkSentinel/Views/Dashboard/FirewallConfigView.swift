@@ -54,9 +54,13 @@ struct FirewallConfigView: View {
     private var host: HostFirewallInfo? { model.state?.hostFirewall }
 
     var body: some View {
-        // Pushed from Firewall & Block, which is the section the console's rail keeps it
-        // under, so the stack belongs to that screen rather than to this one.
+        // The Firewall tab opens here — on the firewall itself, not on the ledger of blocks
+        // above it. The console's rail indents this page under Firewall & Block; a phone has
+        // one tab for the group, and the whole host firewall is what that tab should open on.
+        // The rest of the group is one tap away at the top of the list. The stack belongs to
+        // the tab, so neither this screen nor the ones it pushes carries one.
         List {
+            groupSection
             hostSection
             rulesSection("Inbound", inbound)
             rulesSection("Outbound", outbound)
@@ -115,6 +119,52 @@ struct FirewallConfigView: View {
             Text(prefillRefusal ?? "")
         }
         .refreshable { await model.refresh(silent: false) }
+    }
+
+    /// The rest of the console's firewall group. Rows rather than a toolbar menu, because
+    /// every other way into a screen in this app is a row, and at the top rather than the
+    /// bottom because a list with thirty rules and thirty sockets under them has no reachable
+    /// bottom.
+    private var groupSection: some View {
+        Section {
+            NavigationLink {
+                FirewallBlockView()
+            } label: {
+                groupRow("Firewall & Block", "hand.raised.fill",
+                         count: (model.state?.firewallRules ?? []).groupedByBlock().count)
+            }
+            .listRowBackground(NSTheme.row)
+
+            NavigationLink {
+                OpenPortsView()
+            } label: {
+                groupRow("Open Ports", "point.3.filled.connected.trianglepath.dotted",
+                         count: model.state?.ports?.count)
+            }
+            .listRowBackground(NSTheme.row)
+
+            NavigationLink {
+                AllowlistView()
+            } label: {
+                groupRow("Allowlist", "checkmark.shield",
+                         count: model.state?.allowlist?.count)
+            }
+            .listRowBackground(NSTheme.row)
+        } footer: {
+            Text("Firewall & Block is the blocks this app and the engine minted — the set you act on during an incident — with manual blocking and Remove all. This page is every rule the firewall evaluates, whoever wrote it.")
+        }
+    }
+
+    private func groupRow(_ title: String, _ symbol: String, count: Int?) -> some View {
+        HStack {
+            Label(title, systemImage: symbol)
+            Spacer(minLength: 8)
+            if let count {
+                Text("\(count)")
+                    .font(.caption.monospaced())
+                    .foregroundStyle(NSTheme.muted)
+            }
+        }
     }
 
     // MARK: - The firewall itself
