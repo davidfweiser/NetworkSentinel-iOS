@@ -29,7 +29,14 @@ struct ServerProfile: Identifiable, Codable, Hashable {
         var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if s.isEmpty { return s }
         if !s.hasPrefix("http://") && !s.hasPrefix("https://") {
-            s = "http://\(s)"
+            // LAN hosts get the console's plain-http default; a routable hostname
+            // (DuckDNS and the like) defaults to https so the master password and
+            // session token never cross the internet in clear.
+            let host = URL(string: "http://\(s)")?.host ?? s
+            let scope = IPScope.of(host)
+            let isLocal = scope == .privateOrLocal || scope == .carrierGradeNAT
+                || host.hasSuffix(".local") || !host.contains(".")
+            s = (isLocal ? "http://" : "https://") + s
         }
         while s.hasSuffix("/") { s.removeLast() }
         return s

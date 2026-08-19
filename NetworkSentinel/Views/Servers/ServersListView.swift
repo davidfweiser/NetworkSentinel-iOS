@@ -124,15 +124,13 @@ struct ServersListView: View {
     }
 
     private func delete(_ server: ServerProfile) {
+        let wasSelected = model.store.selectedServerId == server.id
         model.store.delete(server.id)
-        if model.store.servers.isEmpty {
-            model.state = nil
-            model.isAuthenticated = false
-            model.authPhase = .checking
-        } else {
-            model.evaluateAuthAfterServerChange()
-            model.restartPolling()
-        }
+        // Removing another server must not touch the live session — re-gate only when
+        // the one being looked at is gone.
+        guard wasSelected else { return }
+        model.evaluateAuthAfterServerChange()
+        model.restartPolling()
     }
 }
 

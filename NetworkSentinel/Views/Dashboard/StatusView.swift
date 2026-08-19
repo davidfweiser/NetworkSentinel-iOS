@@ -191,12 +191,14 @@ struct StatusView: View {
             if asleep { return "Monitoring stopped · blocks still in force" }
             return monitoring ? "Nothing needs a decision" : "Monitoring paused"
         }
+        // Host-local first: the server answers "No" for these too, and that word alone
+        // would be the headline. The suppression ThreatRow applies belongs here as well.
+        if !t.isBlockable { return "On this host · nothing to firewall" }
         // The server's own sentence when it has one — it knows about dry run and about a
         // block the firewall refused, neither of which is visible from here.
         if let short = t.blockShort, !short.isEmpty {
             return t.blockVerdict?.isBlocked == true ? "Blocked · rule in force" : short
         }
-        if !t.isBlockable { return "On this host · nothing to firewall" }
         return "Not blocked · nothing stopping it"
     }
 
@@ -349,7 +351,9 @@ struct StatusView: View {
             guard !Task.isCancelled else { return }
             UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
             await model.requestBlock(ip: ip)
-            cancelHold()
+            // holdTask stays set: the finger is still down, and clearing it here would
+            // let the next drag event arm a fresh hold and fire the block again.
+            // Touch-up runs cancelHold and resets everything.
         }
     }
 

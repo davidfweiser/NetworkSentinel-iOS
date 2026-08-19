@@ -72,7 +72,6 @@ actor APIClient {
 
         let token = extractSessionToken(from: response, baseURL: baseURL)
             ?? sessionTokenFromJar(baseURL: baseURL)
-            ?? anyNsSessionCookie()
         return (body, token)
     }
 
@@ -91,7 +90,6 @@ actor APIClient {
 
         let token = extractSessionToken(from: response, baseURL: baseURL)
             ?? sessionTokenFromJar(baseURL: baseURL)
-            ?? anyNsSessionCookie()
         return (body, token)
     }
 
@@ -264,10 +262,15 @@ actor APIClient {
 
     private func url(base: String, path: String) throws -> URL {
         let normalized = ServerProfile.normalizeURL(base)
-        guard let baseURL = URL(string: normalized) else { throw APIError.invalidURL }
-        guard let url = URL(string: path, relativeTo: baseURL)?.absoluteURL else {
+        // Append rather than resolve: `URL(string: "/api/...", relativeTo:)` would drop
+        // the base path, cutting off a console served under a reverse-proxy subpath.
+        guard var comps = URLComponents(string: normalized), comps.host != nil else {
             throw APIError.invalidURL
         }
+        let pieces = path.split(separator: "?", maxSplits: 1)
+        comps.path += String(pieces[0])
+        if pieces.count == 2 { comps.query = String(pieces[1]) }
+        guard let url = comps.url else { throw APIError.invalidURL }
         return url
     }
 
@@ -324,14 +327,16 @@ actor APIClient {
         })?.value
     }
 
-    private func anyNsSessionCookie() -> String? {
-        cookieStorage.cookies?.first(where: { $0.name == "ns_session" })?.value
-    }
-
     private func clearCookies(for baseURL: String) {
         guard let base = URL(string: ServerProfile.normalizeURL(baseURL)) else { return }
         cookieStorage.cookies(for: base)?.forEach { cookieStorage.deleteCookie($0) }
-        cookieStorage.cookies?.filter { $0.name == "ns_session" }.forEach { cookieStorage.deleteCookie($0) }
+        // Only this host's session — with several servers configured, the jar holds a
+        // live `ns_session` for each of them.
+        if let host = base.host {
+            cookieStorage.cookies?
+                .filter { $0.name == "ns_session" && $0.domain.contains(host) }
+                .forEach { cookieStorage.deleteCookie($0) }
+        }
     }
 
     private func parseCookie(_ header: String, name: String) -> String? {

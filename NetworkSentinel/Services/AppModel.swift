@@ -188,7 +188,10 @@ final class AppModel {
     private func beginUIBackgroundTask() {
         endUIBackgroundTask()
         uiBackgroundTask = UIApplication.shared.beginBackgroundTask(withName: "NetworkSentinelPoll") { [weak self] in
-            Task { @MainActor in
+            // Delivered on the main thread at the deadline. The task must be ended
+            // before this handler returns — deferring to a queued Task risks the
+            // watchdog killing the app first.
+            MainActor.assumeIsolated {
                 self?.stopPolling()
                 self?.endUIBackgroundTask()
             }
@@ -231,7 +234,8 @@ final class AppModel {
 
     private func pollServerForAlerts(_ server: ServerProfile) async {
         do {
-            guard let token = try await ensureSessionToken(for: server) else { return }
+            let (hasSession, token) = try await ensureBackgroundSession(for: server)
+            guard hasSession else { return }
             let s = try await api.fetchState(baseURL: server.baseURL, token: token)
 
             // Update live UI only for the selected server.
@@ -250,22 +254,24 @@ final class AppModel {
         }
     }
 
-    /// Returns a valid session token, logging in with remembered password if needed.
-    private func ensureSessionToken(for server: ServerProfile) async throws -> String? {
+    /// Makes sure a session usable for `fetchState` exists, logging in with the remembered
+    /// password if needed. The token is nil for a cookie-only login — same-process requests
+    /// still work through the jar, so `hasSession` is the flag that matters.
+    private func ensureBackgroundSession(
+        for server: ServerProfile
+    ) async throws -> (hasSession: Bool, token: String?) {
         if let token = store.sessionToken(for: server.id) {
-            return token
+            return (true, token)
         }
         guard let password = store.rememberedPassword(for: server.id) else {
-            return nil
+            return (false, nil)
         }
         let (resp, token) = try await api.login(baseURL: server.baseURL, password: password)
-        guard resp.ok else { return nil }
+        guard resp.ok else { return (false, nil) }
         if let token {
             store.setSessionToken(token, for: server.id)
-            return token
         }
-        // Cookie-only session; try status without stored token.
-        return store.sessionToken(for: server.id)
+        return (true, token)
     }
 
     /// Immediately require master password unless we already have a stored session token
@@ -280,6 +286,12 @@ final class AppModel {
         lastError = nil
         isAuthenticated = false
         pendingCriticalAlert = nil
+        // The scan is per-server state: carrying it across a switch would show one
+        // machine's firewall under another's name, and a stale `hostScanUnsupported`
+        // would suppress the fetch on a server that does have the endpoint.
+        hostScan = nil
+        hostScanUnsupported = false
+        hostScanError = nil
         guard let server else {
             authPhase = .checking
             needsAuth = false
@@ -558,7 +570,7 @@ final class AppModel {
         applyState(s, server: server)
     }
 
-    func performSetup(password: String, confirm: String) async throws {
+    func performSetup(password: String, confirm: String, remember: Bool) async throws {
         guard let server else { throw APIError.invalidURL }
         let (resp, token) = try await api.setup(baseURL: server.baseURL, password: password, confirm: confirm)
         guard resp.ok else {
@@ -568,7 +580,7 @@ final class AppModel {
         if let token {
             store.setSessionToken(token, for: server.id)
         }
-        store.setRememberedPassword(password, for: server.id)
+        store.setRememberedPassword(remember ? password : nil, for: server.id)
 
         let s = try await api.fetchState(
             baseURL: server.baseURL,

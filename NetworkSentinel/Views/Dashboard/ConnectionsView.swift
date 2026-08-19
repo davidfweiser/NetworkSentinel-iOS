@@ -146,7 +146,7 @@ struct ConnectionRow: View {
                         .font(.caption2.monospaced())
                         .foregroundStyle(NSTheme.muted)
                 }
-                if let ip = connection.remoteAddress, !ip.isEmpty, !isLocalish(ip) {
+                if let ip = connection.remoteAddress, IPScope.of(ip).isBlockable {
                     Button("Block", action: onBlock)
                         .font(.caption.weight(.bold))
                         .foregroundStyle(NSTheme.danger)
@@ -163,9 +163,5 @@ struct ConnectionRow: View {
         case "TIME_WAIT", "CLOSE_WAIT", "FIN_WAIT1", "FIN_WAIT2": return NSTheme.warning
         default: return NSTheme.muted
         }
-    }
-
-    private func isLocalish(_ ip: String) -> Bool {
-        ip.hasPrefix("127.") || ip.hasPrefix("10.") || ip.hasPrefix("192.168.") || ip == "::1" || ip.hasPrefix("fe80:")
     }
 }

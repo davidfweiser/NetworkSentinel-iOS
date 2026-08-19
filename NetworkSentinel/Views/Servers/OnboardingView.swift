@@ -115,8 +115,14 @@ struct OnboardingView: View {
             error = "Enter a server URL."
             return
         }
+        let normalized = ServerProfile.normalizeURL(trimmed)
+        guard let parsed = URL(string: normalized), parsed.host != nil else {
+            error = "Enter a valid URL, e.g. http://192.168.1.10:18765"
+            return
+        }
         error = nil
-        model.store.add(name: name.isEmpty ? "Server" : name, baseURL: trimmed)
+        model.store.add(name: name.isEmpty ? "Server" : name, baseURL: normalized)
+        model.evaluateAuthAfterServerChange()
         model.restartPolling()
     }
 }

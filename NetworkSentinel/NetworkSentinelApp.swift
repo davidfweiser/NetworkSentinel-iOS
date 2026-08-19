@@ -4,17 +4,22 @@ import SwiftUI
 @main
 struct NetworkSentinelApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @State private var model = AppModel()
+    @State private var model: AppModel
     @Environment(\.scenePhase) private var scenePhase
+
+    init() {
+        // The bridge must be live before any BGTask fires. A background relaunch never
+        // builds a scene, so `.onAppear` would leave it nil and every wake would no-op.
+        let model = AppModel()
+        _model = State(initialValue: model)
+        AppModelBridge.shared = model
+    }
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environment(model)
                 .preferredColorScheme(.dark)
-                .onAppear {
-                    AppModelBridge.shared = model
-                }
                 .onChange(of: scenePhase) { _, phase in
                     model.handleScenePhase(phase)
                 }

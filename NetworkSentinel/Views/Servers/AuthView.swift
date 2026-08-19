@@ -196,7 +196,7 @@ struct AuthView: View {
         defer { isWorking = false }
         do {
             if isSetup {
-                try await model.performSetup(password: password, confirm: confirm)
+                try await model.performSetup(password: password, confirm: confirm, remember: remember)
             } else {
                 try await model.performLogin(password: password, remember: remember)
             }

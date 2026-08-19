@@ -172,7 +172,7 @@ struct SettingsView: View {
                         .listRowBackground(NSTheme.row)
                     LabeledContent("Server version", value: model.state?.version ?? "—")
                         .listRowBackground(NSTheme.row)
-                    LabeledContent("Poll interval", value: "\(Int(model.pollInterval * 10) / 10)s")
+                    LabeledContent("Poll interval", value: "\(model.pollInterval.formatted())s")
                         .listRowBackground(NSTheme.row)
                 }
             }
