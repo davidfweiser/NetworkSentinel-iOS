@@ -304,9 +304,13 @@ Select an iPhone simulator or device, then **Run** (⌘R).
 
 If you use a physical device, set your **Development Team** in the Xcode project’s Signing settings.
 
-### ATS note
+### Transport security
 
-The web UI typically serves **plain HTTP** on the LAN. The app allows arbitrary loads (`NSAllowsArbitraryLoads`) so those URLs work. Prefer VPN or trusted networks when exposing the web UI beyond localhost.
+The web UI typically serves **plain HTTP** on the LAN, and the app allows exactly that — App Transport Security is scoped to local networking (`NSAllowsLocalNetworking`), so private addresses (`192.168.x.x`, `10.x.x.x`, CGNAT/Tailscale ranges, `.local` names) work over http.
+
+A **public hostname is different**: the master password and session token would cross the internet with it, so a scheme-less public hostname (say a DuckDNS domain) normalizes to `https://`, and ATS refuses cleartext to public hosts outright. For remote access, enable HTTPS on the server first — **Settings → Remote access** in the app configures it, including Let's Encrypt issuance through DuckDNS.
+
+A console served under a reverse-proxy subpath (e.g. `https://host/sentinel`) is supported — the path is kept when building API requests.
 
 ## First launch
 
