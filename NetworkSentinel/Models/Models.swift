@@ -152,6 +152,33 @@ struct HostFirewallInfo: Codable {
     /// `netsh` listing of 300 needs the difference explained.
     let disabledRules: Int?
 
+    // MARK: Whether this console can write at all (web ≥ 0.7.10)
+    //
+    // The server reads the whole ruleset through `sudo -n` and can still have no way to
+    // change any of it. Until 0.7.10 nothing said so until Save had already failed, which
+    // reads as the app being broken rather than the host being locked down. The server now
+    // decides it up front and ships the two remedies with it, capability first.
+
+    /// `nil` on a server that predates the field. A screen must not read that as "no": a
+    /// 0.7.0–0.7.9 server writes rules perfectly well and simply never says so.
+    let canWriteRules: Bool?
+    let elevationLead: String?
+    let elevationCapCommands: String?
+    let elevationAlternative: String?
+    let elevationSudoCommands: String?
+    let elevationTail: String?
+
+    /// False only when the server has actually said it cannot write. Silence is not a no.
+    var isReadOnly: Bool { canWriteRules == false }
+
+    /// Anything to draw in the read-only notice. A server can report `canWriteRules: false`
+    /// with no remedy attached, and a banner with a heading and nothing under it is worse
+    /// than the disabled buttons on their own.
+    var hasElevationAdvice: Bool {
+        [elevationLead, elevationCapCommands, elevationAlternative, elevationSudoCommands, elevationTail]
+            .contains { !($0 ?? "").isEmpty }
+    }
+
     var isEnabled: Bool { enabled == true }
 
     /// True when inbound traffic matching nothing is dropped. The default when the server
@@ -400,6 +427,10 @@ struct SettingsInfo: Codable {
     let httpsActive: Bool?
     let httpsPort: Int?
     let httpsRedirect: Bool?
+    /// Web ≥ 0.7.6 — the plain-HTTP listener is not bound at all, so the master password
+    /// can only cross the wire encrypted. `nil` on a server that predates the switch, which
+    /// is why the row is drawn only when the field arrives rather than defaulted to off.
+    let httpsOnly: Bool?
     let httpsStatus: String?
     let tlsCertPath: String?
     let tlsKeyPath: String?

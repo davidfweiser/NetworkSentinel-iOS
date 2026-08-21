@@ -18,9 +18,12 @@ struct StatusView: View {
     /// tapping one has to land where it can be acted on rather than opening a modal that
     /// duplicates the tab.
     var onOpenThreats: () -> Void
+    /// Handing over to the Settings screen. Enforcement and Detection used to be a sheet and
+    /// a push of this app's own devising; they are groups on the console's Settings page, so
+    /// the rows that summarise them here open that page rather than a second copy of it.
+    var onOpenSettings: () -> Void
 
     @Namespace private var glassNamespace
-    @State private var showEnforcement = false
 
     // MARK: Hold to block
     //
@@ -92,13 +95,8 @@ struct StatusView: View {
             .refreshable { await model.refresh(silent: false) }
             .navigationDestination(for: StatusDestination.self) { destination in
                 switch destination {
-                case .detection: DetectionView()
                 case .dataFlow: DataFlowView()
                 }
-            }
-            .sheet(isPresented: $showEnforcement) {
-                EnforcementView()
-                    .preferredColorScheme(.dark)
             }
         }
     }
@@ -107,6 +105,12 @@ struct StatusView: View {
 
     private var serverBar: some View {
         HStack(spacing: 10) {
+            // The rail, where the console keeps it: leading edge, above everything. This
+            // screen draws its own header instead of a navigation bar, so the button that
+            // every other screen gets from `.consoleRailToolbar()` is placed by hand here.
+            ConsoleRailButton()
+                .foregroundStyle(NSTheme.text2)
+
             Button {
                 showServers = true
             } label: {
@@ -556,9 +560,7 @@ struct StatusView: View {
 
     @ViewBuilder
     private var destinationRows: some View {
-        Button {
-            showEnforcement = true
-        } label: {
+        Button(action: onOpenSettings) {
             destinationRow(
                 icon: "hand.raised.fill",
                 tint: autoBlockTint,
@@ -567,7 +569,7 @@ struct StatusView: View {
             )
         }
 
-        NavigationLink(value: StatusDestination.detection) {
+        Button(action: onOpenSettings) {
             destinationRow(
                 icon: "dot.radiowaves.left.and.right",
                 tint: NSTheme.signal,
@@ -657,6 +659,5 @@ struct StatusView: View {
 /// Push targets from Status. An enum rather than a closure so the stack keeps working when
 /// more screens move off this one.
 enum StatusDestination: Hashable {
-    case detection
     case dataFlow
 }

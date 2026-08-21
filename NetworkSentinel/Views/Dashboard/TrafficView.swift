@@ -11,7 +11,9 @@ import SwiftUI
 /// The switch is a picker in the navigation bar rather than a segmented header, so it costs
 /// no vertical space in a dense table and the search field stays where each list had it.
 struct TrafficView: View {
-    @State private var mode: TrafficMode = .hosts
+    /// Owned by the tab view, not by this screen: the rail's two entries — *Live Connections*
+    /// and *Remote Computers* — have to be able to open either side directly.
+    @Binding var mode: TrafficMode
 
     var body: some View {
         switch mode {

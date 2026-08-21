@@ -77,6 +77,7 @@ struct ThreatsView: View {
             .nsAsleepDimmed(model.isAsleep)
             .background { AmbientField() }
             .navigationTitle("Break-in Attempts")
+            .consoleRailToolbar()
             .searchable(text: $query, prompt: "IP, title, type")
             // Segmented filter must not live in the nav toolbar — on a phone it
             // collapses into an unreadable circle (All/High+/Critical → "A t C").
