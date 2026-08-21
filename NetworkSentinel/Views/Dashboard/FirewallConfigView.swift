@@ -55,6 +55,15 @@ struct FirewallConfigView: View {
     /// host-wide reading to report.
     private var host: HostFirewallInfo? { model.hostFirewall }
 
+    /// Whether a Save or a Delete from this screen can land at all — web 0.7.10+.
+    ///
+    /// The server reads the whole ruleset through `sudo -n` and can still have no way to
+    /// change any of it, and until 0.7.10 nothing said so until the write had already failed.
+    /// It decides that up front now, so the screen can stop offering an editor that will
+    /// always fail. Silence is not a no: a 0.7.0–0.7.9 server sends no such field and writes
+    /// rules perfectly well.
+    private var canWrite: Bool { !(host?.isReadOnly ?? false) }
+
     var body: some View {
         // The Firewall tab opens here — on the firewall itself, not on the ledger of blocks
         // above it. The console's rail indents this page under Firewall & Block; a phone has
@@ -64,6 +73,7 @@ struct FirewallConfigView: View {
         List {
             groupSection
             scanStateSection
+            elevationSection
             hostSection
             rulesSection("Inbound", inbound)
             rulesSection("Outbound", outbound)
@@ -72,6 +82,7 @@ struct FirewallConfigView: View {
         .scrollContentBackground(.hidden)
         .background { AmbientField() }
         .navigationTitle("Firewall Config")
+        .consoleRailToolbar()
         // A server that keeps the scan off /api/state is read here rather than on the poll —
         // netsh takes seconds, which is why that build moved it in the first place.
         .task { await model.ensureHostFirewall() }
@@ -87,6 +98,10 @@ struct FirewallConfigView: View {
                     Image(systemName: "plus")
                 }
                 .accessibilityLabel("Add rule")
+                // A server that has told us it cannot write gets no add button. The console
+                // disables its own for the same reason: an editor whose Save can only fail
+                // is worse than no editor.
+                .disabled(!canWrite)
             }
         }
         .sheet(item: $editing) { target in
@@ -131,6 +146,31 @@ struct FirewallConfigView: View {
             // Without the rescan flag the server answers from its cache — Rescan is the one
             // that makes it shell out to netsh again.
             if model.hostScan != nil { await model.loadHostFirewall() }
+        }
+    }
+
+    /// The read-only notice, and the two commands that lift it — web 0.7.10+.
+    ///
+    /// Amber rather than red, as in the console: the page is working, it just cannot write.
+    /// A phone cannot run either command, so the block is selectable and carries a copy
+    /// button — the point of showing them is getting them onto the machine that can.
+    @ViewBuilder
+    private var elevationSection: some View {
+        if let host, host.isReadOnly {
+            Section {
+                ConsoleElevationBanner(
+                    title: "Read-only — rules cannot be changed from here",
+                    lead: host.hasElevationAdvice
+                        ? host.elevationLead
+                        : "This server can read the firewall but has no way to change it.",
+                    capabilityCommands: host.elevationCapCommands,
+                    alternative: host.elevationAlternative,
+                    sudoCommands: host.elevationSudoCommands,
+                    tail: host.elevationTail
+                )
+                .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+                .listRowBackground(Color.clear)
+            }
         }
     }
 
@@ -194,25 +234,21 @@ struct FirewallConfigView: View {
     /// bottom.
     private var groupSection: some View {
         Section {
-            NavigationLink {
-                FirewallBlockView()
-            } label: {
+            // Values rather than views: these three are rail entries in the console, so the
+            // rail has to be able to push one without this screen being on top first.
+            NavigationLink(value: FirewallRoute.block) {
                 groupRow("Firewall & Block", "hand.raised.fill",
                          count: (model.state?.firewallRules ?? []).groupedByBlock().count)
             }
             .listRowBackground(NSTheme.row)
 
-            NavigationLink {
-                OpenPortsView()
-            } label: {
+            NavigationLink(value: FirewallRoute.ports) {
                 groupRow("Open Ports", "point.3.filled.connected.trianglepath.dotted",
                          count: model.state?.ports?.count)
             }
             .listRowBackground(NSTheme.row)
 
-            NavigationLink {
-                AllowlistView()
-            } label: {
+            NavigationLink(value: FirewallRoute.allowlist) {
                 groupRow("Allowlist", "checkmark.shield",
                          count: model.state?.allowlist?.count)
             }
@@ -354,13 +390,15 @@ struct FirewallConfigView: View {
                 ForEach(list.uniquedRows()) { row($0.value) }
             }
 
-            Button {
-                addRule(title == "Outbound" ? .outbound : .inbound)
-            } label: {
-                Label("Add an \(title) Rule", systemImage: "plus.circle")
+            if canWrite {
+                Button {
+                    addRule(title == "Outbound" ? .outbound : .inbound)
+                } label: {
+                    Label("Add an \(title) Rule", systemImage: "plus.circle")
+                }
+                .tint(NSTheme.accent)
+                .listRowBackground(NSTheme.row)
             }
-            .tint(NSTheme.accent)
-            .listRowBackground(NSTheme.row)
         } header: {
             HStack {
                 Text(title)
@@ -475,7 +513,13 @@ struct FirewallConfigView: View {
                 // The web page and the desktop grid both put Edit and Delete on the row
                 // itself. A swipe is the iOS idiom, but it is also invisible until you try
                 // it, and a screen that can be edited should look like one.
-                if rule.isProtectedRule {
+                if !canWrite {
+                    // Same place, same reason as the protected row's word: the buttons are
+                    // missing on purpose, and the notice at the top of the screen says why.
+                    Text("read-only")
+                        .font(.caption2)
+                        .foregroundStyle(NSTheme.muted)
+                } else if rule.isProtectedRule {
                     // Says why this row has no buttons, where the buttons would have been —
                     // the console's actions column carries the same word for the same reason.
                     Text("not removable")
@@ -501,17 +545,19 @@ struct FirewallConfigView: View {
         .listRowBackground(NSTheme.row)
         .contentShape(.rect)
         .onTapGesture {
-            if rule.isEditable { editing = EditorTarget(rule: rule, prefill: nil, seedNote: nil) }
+            if canWrite, rule.isEditable {
+                editing = EditorTarget(rule: rule, prefill: nil, seedNote: nil)
+            }
         }
-        .swipeActions(edge: .trailing, allowsFullSwipe: !rule.isProtectedRule) {
-            if !rule.isProtectedRule {
+        .swipeActions(edge: .trailing, allowsFullSwipe: canWrite && !rule.isProtectedRule) {
+            if canWrite, !rule.isProtectedRule {
                 Button(role: .destructive) {
                     pendingRemoval = rule
                 } label: {
                     Label("Remove", systemImage: "trash")
                 }
             }
-            if rule.isEditable {
+            if canWrite, rule.isEditable {
                 Button {
                     editing = EditorTarget(rule: rule, prefill: nil, seedNote: nil)
                 } label: {
@@ -579,14 +625,18 @@ struct FirewallConfigView: View {
                     .padding(.vertical, 2)
                     .listRowBackground(NSTheme.row)
                     .contentShape(.rect)
-                    .onTapGesture { startRule(for: listener) }
+                    // Read-only servers keep the list — it comes from `ss`, which needs no
+                    // privilege — but not the tap that starts a rule from it.
+                    .onTapGesture { if canWrite { startRule(for: listener) } }
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        Button {
-                            startRule(for: listener)
-                        } label: {
-                            Label("New rule", systemImage: "plus")
+                        if canWrite {
+                            Button {
+                                startRule(for: listener)
+                            } label: {
+                                Label("New rule", systemImage: "plus")
+                            }
+                            .tint(NSTheme.accent)
                         }
-                        .tint(NSTheme.accent)
                     }
                 }
             } header: {
@@ -602,7 +652,12 @@ struct FirewallConfigView: View {
                     // The point of listing the sockets beside the rules: a rule here is written
                     // against one of them, and reading the port off a terminal to retype it is
                     // how a port goes missing from the rule set.
-                    Text("One row per bind address. Tap a row — or swipe it — to start an inbound rule for that socket's protocol and port.")
+                    // The tap this sentence describes is switched off on a read-only host,
+                    // so the sentence goes with it rather than promising a gesture that
+                    // does nothing.
+                    Text(canWrite
+                         ? "One row per bind address. Tap a row — or swipe it — to start an inbound rule for that socket's protocol and port."
+                         : "One row per bind address. Starting a rule from a socket needs a server that can write rules — see the notice above.")
                 }
             }
         }

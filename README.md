@@ -9,27 +9,24 @@ Connect to one or more hosts running the headless web UI (`-w` / `--web`), sign 
 | Area | What you get |
 |------|----------------|
 | **Multi-server** | Add/edit/delete servers; switch between home, lab, VPS, etc. |
-| **Dashboard** | Needs-attention card with one-tap block, live stats, scrubbable activity chart, sleep/wake, pause/resume, auto-block controls and rule expiry, and the way through to Detection, Enforcement and Data flow |
+| **Dashboard** | Needs-attention card with one-tap block, live stats, scrubbable activity chart, sleep/wake, pause/resume, auto-block controls and rule expiry, and the way through to Data flow |
+| **The console's rail** | All ten of the browser console's menu entries, in its order, under its names, with its status block — one tap from every screen |
 | **Sleep / Wake** | Stops every watcher on the server and parks the app — dimmed data, an Asleep banner on each live tab, a 30-second heartbeat, no Critical alerts. Firewall blocks stay in force |
-| **Detection** | Toggle geo lookups, auth-log brute-force monitoring, closed-port scan detection, kernel flow events, and the server's own Critical warnings, with its status text inline |
-| **Intrusion detection** | Threat-intel blocklists, new-listener alerts, process reputation, ARP/gateway watch, startup-item watch, exfiltration monitor with threshold, honeypot decoy ports (web 0.4+) |
-| **DNS hygiene** | Plaintext egress, encrypted DNS going away, unapproved resolvers, allowlist drift — with the approved-resolver list (web 0.6+) |
-| **VPN peers** | WireGuard peer monitoring, per-peer transfer threshold, and the read-only peer table (web 0.6+) |
-| **Signatures** | Suricata EVE ingestion — feed path, maximum severity, muted signature ids (web 0.6+) |
+| **Settings** | The console's own Settings page, entire — every group it has, in its order, with its titles and its explanations. **Monitoring** (live monitoring, refresh speed, geo lookups, auth-log, closed-port scan, kernel flow events, traffic metering, server Critical alerts) · **Intrusion detection** (threat-intel, new-listener, process reputation, ARP/gateway, startup-item, exfiltration + threshold, honeypot + decoy ports) · **DNS hygiene** · **VPN (WireGuard)** with the read-only peer table · **Signatures (Suricata)** · **Alerting** · **Remote access** including HTTPS-only (0.7.6) · **Auto-block** · **Allowlist** · **Danger zone**. Anything the browser can change on that server, this changes |
 | **Break-in Attempts** | Severity filters, search, clear alerts, block source IP — each row saying whether that IP is actually blocked (web 0.6.3+) |
 | **Data flow** | Bandwidth meter on Dashboard: live in/out rates, this month a day at a time, the year a month at a time (web 0.7+) |
 | **Firewall** | Opens on **Firewall Config**, with **Firewall & Block** (managed blocks, manual IP blocking, *Authorize firewall*, *Remove all*), **Open Ports** and **Allowlist** a tap inside it. Firewall Config is the whole host firewall — UFW's rules, WireGuard's, Docker's and this app's — in evaluation order, with add / edit / remove, service presets, the default policies, and what is listening behind them; tap a listening socket to start a rule for it (web 0.7+; host-wide on 0.7.4+) |
 | **Connections** | One tab, two readings of who this machine is talking to, switched by a picker in the navigation bar: **Remote Computers** — peers with geo/threat badges, swipe to block/unblock — and **Live Connections** — the process + endpoint table, with blocking on the row |
-| **Settings** | Which server this is, sign-out and master password, this device's alerts and background polling, the server's webhook URL, HTTPS + DuckDNS remote access and certificate issuance, and **Help** |
+| **This device** | First in Settings and unique to the app: which server, its address, the master password, sign-out, this iPhone's own Critical alerts and background polling, and how fast this phone polls |
 | **Alerts** | Time-sensitive notifications and in-app popups for Critical threats, leading with whether the address was blocked (web 0.6.3+), with catch-up on launch |
 | **Secure storage** | Session tokens & optional remembered passwords in Keychain |
 
-Talks to the same JSON API as the browser console (Linux, Windows & macOS web **0.3.x – 0.7.x**, current through **0.7.4**):
+Talks to the same JSON API as the browser console (Linux, Windows & macOS web **0.3.x – 0.7.x**, current through **0.7.13**):
 
 - `GET /api/auth/status`
 - `POST /api/auth/login` · `/api/auth/setup` · `/api/auth/logout`
 - `POST /api/auth/change-password` (0.3.2+) — `currentPassword`, `newPassword`, `confirm`
-- `GET /api/state` (settings include `geoLookupEnabled` / `allowlistUseRemoteFeed` / `authLogMonitorEnabled` + `authLogStatus` / `probeLogEnabled` + `probeLogStatus` / `criticalAlertsEnabled`, on 0.4+ the intrusion-detection group, on 0.5+ the HTTPS/DuckDNS group, and on 0.6+ `preventionDryRun` / `conntrackEventsEnabled` / the DNS, WireGuard and Suricata groups, on 0.6.3+ `autoBlockSummary`, on 0.7+ `trafficMeterEnabled` + `trafficStatus`; threats include `ts` and on 0.6.3+ `blockStatus` / `blockShort` / `blocked`; rules include `isProtected`, `address`, `ports`; on 0.7+ the top-level `traffic` and `configRules`; on 0.7.4+ the top-level `hostFirewall` and `listeners`, and `configRules` entries gain `key` and `isForeign`)
+- `GET /api/state` (settings include `geoLookupEnabled` / `allowlistUseRemoteFeed` / `authLogMonitorEnabled` + `authLogStatus` / `probeLogEnabled` + `probeLogStatus` / `criticalAlertsEnabled`, on 0.4+ the intrusion-detection group, on 0.5+ the HTTPS/DuckDNS group, and on 0.6+ `preventionDryRun` / `conntrackEventsEnabled` / the DNS, WireGuard and Suricata groups, on 0.6.3+ `autoBlockSummary`, on 0.7+ `trafficMeterEnabled` + `trafficStatus`; threats include `ts` and on 0.6.3+ `blockStatus` / `blockShort` / `blocked`; rules include `isProtected`, `address`, `ports`; on 0.7+ the top-level `traffic` and `configRules`; on 0.7.4+ the top-level `hostFirewall` and `listeners`, and `configRules` entries gain `key` and `isForeign`; on 0.7.6+ `httpsOnly`; on 0.7.10+ `hostFirewall.canWriteRules` and the five `elevation*` strings that go with it)
 - `POST /api/action` — `block`, `unblock`, `set_setting`, `block_port`, `unblock_port`, `remove_rule`, `remove_all_rules`, allowlist, auto-block, …
 - `POST /api/action` — `save_config_rule` (web 0.7+) — `label`, `ruleAction`, `direction`, `protocol`, `ports`, `addresses`, and `replace` when editing rather than adding; on 0.7.4+ `key` instead of `replace` when the rule being edited belongs to the host
 - `POST /api/action` — `delete_host_rule` (`key`) and `rescan_firewall` (web 0.7.4+)
@@ -167,9 +164,43 @@ Windows also says **Allow/Block** where Linux says **Accept/Drop**, so the defau
 
 The 0.7.4 web console's `blockedCount` is not ported. It is the hero subtitle on a page that has one; the app's blocked addresses are a list you scroll under Firewall & Block, one tap inside the Firewall tab, not a number over a banner.
 
+### HTTPS only, and a firewall that admits it cannot be written (0.7.6 – 0.7.13)
+
+Two things the console gained while the app was at 0.7.4, both of which change what the app should offer rather than only what it shows.
+
+**HTTPS only** (0.7.6) drops the plain-HTTP listener entirely, so the master password can only cross the wire encrypted. It sits in **Settings → Remote access** under the redirect switch, and it is drawn only when the server sends `httpsOnly` — the field's arrival is the version check, and a switch that writes `Unknown setting` to a 0.7.5 server reads as a control that does nothing. The server refuses the change while HTTPS is off or its certificate will not load, deliberately, so a bad certificate cannot lock the console out; its refusal is surfaced verbatim.
+
+**Read-only firewalls** (0.7.10) close a gap that was the app's worst kind of lie. A server reads the whole ruleset through `sudo -n` and can still have no way to change any of it — a user service with no passwordless sudo and no `CAP_NET_ADMIN` reads everything and writes nothing. Until 0.7.10 nothing said so until Save had already failed, which reads as the app being broken rather than the host being locked down. The server now decides it up front and publishes `canWriteRules` with the two remedies attached, capability first.
+
+When it says no, the app stops offering what cannot happen: the **+** in the toolbar is disabled, the *Add an Inbound/Outbound Rule* rows are gone, every rule row reads **read-only** where its Edit and Delete were, tap-to-edit and the swipe actions are off, and the listening rows no longer invite a rule that could not be written. Above the lists sits the console's own amber notice — the lead, the `setcap` line, the sudoers alternative, and the tail — with each command block selectable and carrying a copy button, since the phone cannot run either one and the point of showing them is getting them onto the machine that can.
+
+`canWriteRules` absent is **not** a no. A 0.7.0–0.7.9 server never sends the field and writes rules perfectly well, so silence leaves every affordance exactly where it was.
+
+### Settings: the console's page, entire (0.7.13)
+
+The app used to spread the server's configuration over three screens of its own devising — a **Detection** list of eighteen switches grouped by what each detector looks at, an **Enforcement** sheet holding the four that change what blocking does, and a **Settings** list holding the server picker, this device's alerts, the webhook and remote access. Three screens, three groupings, none of them the console's. Someone who knew where *Exfiltration threshold* lived in the browser knew nothing about where it lived here.
+
+There is now one Settings screen and it is the console's page: **Monitoring · Intrusion detection · DNS hygiene · VPN (WireGuard) · Signatures (Suricata) · Alerting · Remote access · Auto-block · Allowlist · Danger zone**, in that order, with the console's own titles and the console's own sentence under each row. Each group's explanatory note comes over too — the paragraphs above DNS hygiene, WireGuard and Suricata that say why the group exists at all, without which those groups are switches nobody can weigh.
+
+Three things are the app's rather than the console's:
+
+- **Server** comes first. A browser is already at the console it is configuring; a phone talks to several, so which one, its address and its master password precede anything the server itself holds.
+- **A filter box** sits above the groups. Forty-odd rows fit a 1400px desktop in one screen and take eleven scrolls here. It matches titles, explanations, setting keys and the server's status lines, and a group with nothing left in it removes its own heading.
+- **On, but not running** interrupts the page when a detector is switched on that the server says it cannot actually run, with the server's own wording and an *Authorize* button. The console has no need of it — it appends each detector's status to its row and a desktop shows twenty rows at once. A phone shows three, so the one that matters is lifted to the top.
+
+Every row is drawn from the settings payload, so a setting a server does not report is a row that is not there. That is the only version check the screen does, and it is why the same screen serves a 0.3.4 server and a 0.7.13 one.
+
+**Page refresh speed** is the one row whose value never leaves the device. It is per-browser in the console — it lives in that browser's storage, not on the server — so it is per-device here, and it persists: a phone on a metered connection should not have to re-choose ten seconds every launch.
+
 ### Navigation: the console's rail on a phone
 
-The web console and the desktop carry the same menu, so the app carries it too. Their rail reads **Dashboard · Live Connections · Remote Computers · Break-in Attempts · Open Ports · Firewall & Block** (with *Firewall Config* and *Allowlist* indented under it) **· Settings** (with *Help* under it) — ten entries, which is four more than a tab bar holds. The mapping:
+The web console and the desktop carry the same menu, so the app carries it too. Their rail reads **Dashboard · Live Connections · Remote Computers · Break-in Attempts · Open Ports · Firewall & Block** (with *Firewall Config* and *Allowlist* indented under it) **· Settings** (with *Help* under it) — ten entries, which is four more than a tab bar holds.
+
+The app's answer used to be that the other five were somewhere sensible: Open Ports and Allowlist a row inside the Firewall tab, Remote Computers a segment of the Connections picker, Help a row under Settings. Sensible, and not the same menu — someone who knows where *Allowlist* is in the console knew nothing here.
+
+So **the rail comes over whole.** The button in the leading slot of every navigation bar (and in the Dashboard's own header, which draws no navigation bar) opens it: all ten entries in the console's order, under the console's names, the two sub-entries indented under their parent with the console's tooltips as their subtitles, the checked one carrying the same ringed dot, and each entry showing what its screen holds — 41 connections, 4 rules, 2 allowlist entries. Under it sits the rail's own **status block**, as on the desktop: what the monitor is doing, whether the firewall can be written, and the auto-block switch with the server's own summary of what it will do.
+
+The tab bar stays. It is the fast path to the five screens a phone lives in, and the rail is the map — the same relationship the desktop has between its toolbar and its rail. The mapping:
 
 | Console rail | In the app |
 |---|---|
@@ -179,7 +210,9 @@ The web console and the desktop carry the same menu, so the app carries it too. 
 | Firewall Config | **Firewall** tab — the whole host firewall is what the tab opens on |
 | Firewall & Block · Open Ports · Allowlist | Rows at the top of it, in that order |
 | Settings | **Settings** tab |
-| Help | A row under Settings, carrying the console's Help page |
+| Help | A row under Settings, and a rail entry that opens the console's Help page as a sheet |
+
+Every one of these is reachable directly from the rail, including the four that are a push inside a tab: choosing *Open Ports* switches to the Firewall tab **and** pushes Open Ports onto it, and choosing *Live Connections* switches to the Connections tab **and** sets its picker, rather than landing you one tap short.
 
 Three decisions worth stating. **Live Connections and Remote Computers share a tab** because they are two readings of one question — a host is the actor, a connection is what it is doing right now — and spending two of five slots on that distinction is what would leave the firewall without one. **Open Ports moved into the firewall group** rather than staying beside the settings, because a listening port is something you decide about: the console keeps it immediately above Firewall & Block, and every row there is one tap from a block.
 
@@ -236,6 +269,34 @@ Treat this as a companion console, not a pager: it is not a substitute for alert
 
 ## Design
 
+### The console's own vocabulary
+
+The web console, the desktop window and this app are one product, and for a long time only
+the palette said so — `NSTheme` is `WebApp.cs`'s `:root` block, value for value, and has been
+since the first release. But a palette is not a look. Every surface the console draws has a
+*shape* as well as a colour: a panel is an 18px card with a heading, a line of context under
+it and its one action pinned to the right of that row; a setting is a title, the sentence
+that says what it does, and a control at the far end; a group of settings carries a tracked
+uppercase caption; a command you cannot run from here sits in a selectable monospace block.
+
+Those shapes are what make the console recognisable, and `Views/Components/ConsoleKit.swift`
+ports them: the panel and its heading row, the five button kinds (ghost, the accent-gradient
+primary, the outlined danger, the filled Remove, the amber Wake), the 44×24 gradient switch,
+the setting row and its group caption, the explanatory note, the stat card, the threat-
+intensity pulse and month panel the console gained in 0.7.8, the amber elevation banner, the
+chip, the status dot, and the dropdown. Sizes are the console's rem values converted at 16px,
+so a row that is `.92rem` there is 15pt here.
+
+Two palette tokens came over with them. The console draws `--text2` (#8a94a6) and `--muted`
+(#636b78) at genuinely different weights — a panel's sub-line against a setting's description
+— and the app had collapsed both into one, which flattened every screen that has both.
+
+Liquid Glass is still the app's, and still where it belongs: floating chrome, the tab bar,
+the alert banners, the sleep notice. A hundred glass rows in a scroll view is both wrong and
+slow, and the console's flat card is what a settings page is made of.
+
+### Severity drives the surface
+
 The interface is built on **Liquid Glass** (iOS 26), and its one organising idea is that
 severity drives the whole surface rather than a single badge:
 
@@ -268,13 +329,15 @@ console uses.
 
 **Settings → Remote access** and **Dynamic DNS & certificate** mirror the web console's own settings, because a console you reach from outside the LAN is exactly the one you cannot walk over to and fix.
 
-The section leads with **This connection**, which reports `httpsActive` — what the server is serving right now. Everything below it is configuration: TLS endpoints are bound when the console starts, so the HTTPS switch, port, redirect and certificate/key paths are saved immediately and take effect at the next restart. The server validates a path as soon as it arrives and tries to load the pair, so a bad one is reported here rather than as a console that fails to come back up.
+The group leads with **This connection**, which reports `httpsActive` — what the server is serving right now. Everything below it is configuration: TLS endpoints are bound when the console starts, so the HTTPS switch, port, redirect and certificate/key paths are saved immediately and take effect at the next restart. The server validates a path as soon as it arrives and tries to load the pair, so a bad one is reported here rather than as a console that fails to come back up.
 
 **Issue certificate** starts Let's Encrypt issuance through DuckDNS. It waits on DNS propagation and runs for minutes, so its progress arrives in the state poll rather than in the action's reply — the button disables itself while issuance is running and the outcome appears under it. The DuckDNS token is write-only: the server reports only whether one is stored and never sends it back, so the field always starts empty and saving it empty clears it.
 
+**HTTPS only** (0.7.6) is the last switch in the group, and the strictest: it skips the plain-HTTP listener entirely so the master password can only cross the wire encrypted. It needs HTTPS on with a working certificate, and if the certificate fails to load at startup the server keeps plain HTTP on rather than lock the console out.
+
 ### Changing the master password
 
-**Settings → Change master password** calls the 0.3.2+ endpoint. The server keeps this device signed in and revokes every other session; if you saved the password on this device, the Keychain copy is updated so background refresh keeps working.
+**Settings → Master password** calls the 0.3.2+ endpoint. The server keeps this device signed in and revokes every other session; if you saved the password on this device, the Keychain copy is updated so background refresh keeps working.
 
 ## Requirements
 
@@ -327,10 +390,11 @@ NetworkSentinel-iOS/
   NetworkSentinel/
     NetworkSentinelApp.swift
     NetworkSentinel.entitlements   # Time Sensitive Notifications
-    Theme.swift
+    Theme.swift               # Palette, ambient field, glass surfaces
     Models/
     Services/                 # API client, server store, Keychain, app model, alerts
     Views/
+      Components/             # ConsoleKit (the console's shapes), NavigationRail, charts
       Servers/                # Onboarding, auth, server list
       Dashboard/              # Tabs & detail lists
 ```

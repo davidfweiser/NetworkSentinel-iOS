@@ -305,6 +305,15 @@ struct MainTabView: View {
     @Environment(AppModel.self) private var model
     @State private var tab = 0
     @State private var showServers = false
+    @State private var showRail = false
+    @State private var showHelp = false
+    /// Which of the console's two "who is this machine talking to" lists is showing. Held
+    /// here rather than inside the screen so the rail can open either one directly, the way
+    /// its two entries do in the console.
+    @State private var trafficMode: TrafficMode = .hosts
+    /// The Firewall tab's stack, as a path — Open Ports, Firewall & Block and Allowlist are
+    /// rail entries in the console, so the rail has to be able to push straight to one.
+    @State private var firewallPath: [FirewallRoute] = []
 
     /// Chrome follows the network: interactive blue when things are calm, the severity
     /// colour once a High or Critical threat is live.
@@ -313,22 +322,20 @@ struct MainTabView: View {
     }
 
     var body: some View {
-        // The console's navigation rail, as far as a phone can carry it: Dashboard, Live
-        // Connections, Remote Computers, Break-in Attempts, Open Ports, Firewall & Block with
-        // Firewall Config and Allowlist under it, Settings with Help under it.
-        //
-        // Five of those are top-level here. Live Connections and Remote Computers share a tab
-        // because they are two readings of one question and two tab slots for them would cost
-        // the firewall its own; the picker in their navigation bar is the rail entry. Open
-        // Ports, Firewall Config and Allowlist sit under Firewall & Block, which is where the
-        // rail indents two of them already and where the third belongs — a listening port is
-        // something you decide about, not a setting.
+        // Five of the console's ten rail entries are tabs, because a tab bar holds five and
+        // these are the five a phone lives in. The other five are not hidden: the rail —
+        // reachable from every screen through the button in each navigation bar — carries the
+        // whole menu, in the console's order, under the console's names.
         //
         // Tab labels are shortened where the bar would truncate them; every screen carries the
         // console's own name in its title.
         TabView(selection: $tab) {
             Tab("Dashboard", systemImage: "gauge.with.dots.needle.67percent", value: 0) {
-                StatusView(showServers: $showServers, onOpenThreats: { tab = 1 })
+                StatusView(
+                    showServers: $showServers,
+                    onOpenThreats: { tab = 1 },
+                    onOpenSettings: { tab = 4 }
+                )
             }
 
             Tab("Break-ins", systemImage: "exclamationmark.shield.fill", value: 1) {
@@ -337,15 +344,22 @@ struct MainTabView: View {
             .badge(model.attentionThreat == nil ? 0 : model.attentionBacklog + 1)
 
             Tab("Connections", systemImage: "arrow.left.arrow.right", value: 2) {
-                TrafficView()
+                TrafficView(mode: $trafficMode)
             }
 
             Tab("Firewall", systemImage: "shield.lefthalf.filled", value: 3) {
-                NavigationStack {
+                NavigationStack(path: $firewallPath) {
                     // Always the whole host firewall. Which endpoint it arrives on is the
                     // model's problem, and a server that has no such page says so on the
                     // screen rather than being silently swapped for a different one.
                     FirewallConfigView()
+                        .navigationDestination(for: FirewallRoute.self) { route in
+                            switch route {
+                            case .block: FirewallBlockView()
+                            case .ports: OpenPortsView()
+                            case .allowlist: AllowlistView()
+                            }
+                        }
                 }
             }
 
@@ -357,6 +371,24 @@ struct MainTabView: View {
         .tabBarMinimizeBehavior(.onScrollDown)
         .tint(chromeTint)
         .animation(.easeInOut(duration: 0.5), value: chromeTint)
+        .environment(\.consoleRail, ConsoleRailAction { showRail = true })
+        .sheet(isPresented: $showRail) {
+            NavigationRailView(current: currentRailEntry, onSelect: open)
+                .presentationDetents([.large])
+                .presentationBackground(.clear)
+                .preferredColorScheme(.dark)
+        }
+        .sheet(isPresented: $showHelp) {
+            NavigationStack {
+                HelpView()
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Done") { showHelp = false }
+                        }
+                    }
+            }
+            .preferredColorScheme(.dark)
+        }
         .sheet(isPresented: $showServers) {
             NavigationStack {
                 ServersListView()
@@ -368,6 +400,114 @@ struct MainTabView: View {
             }
             .presentationDetents([.medium, .large])
             .preferredColorScheme(.dark)
+        }
+    }
+
+    // MARK: - The rail
+
+    /// Which rail entry the app is currently showing, so the rail can check it. Two tabs hold
+    /// more than one entry — Connections holds both traffic lists, Firewall holds its whole
+    /// group — so this reads the state inside the tab, not just the tab.
+    private var currentRailEntry: RailEntry {
+        switch tab {
+        case 1: return .threats
+        case 2: return trafficMode == .hosts ? .hosts : .connections
+        case 3:
+            switch firewallPath.last {
+            case .block: return .firewall
+            case .ports: return .ports
+            case .allowlist: return .allowlist
+            case nil: return .firewallConfig
+            }
+        case 4: return .settings
+        default: return .dashboard
+        }
+    }
+
+    private func open(_ entry: RailEntry) {
+        switch entry {
+        case .dashboard:
+            tab = 0
+        case .threats:
+            tab = 1
+        case .hosts:
+            trafficMode = .hosts
+            tab = 2
+        case .connections:
+            trafficMode = .connections
+            tab = 2
+        case .firewallConfig:
+            firewallPath = []
+            tab = 3
+        case .firewall:
+            firewallPath = [.block]
+            tab = 3
+        case .ports:
+            firewallPath = [.ports]
+            tab = 3
+        case .allowlist:
+            firewallPath = [.allowlist]
+            tab = 3
+        case .settings:
+            tab = 4
+        case .help:
+            // Help is a page under Settings in the console, and a sheet here: pushing it into
+            // the Settings stack would leave the tab parked on Help the next time it is
+            // opened, which is not where anyone left it.
+            showHelp = true
+        }
+    }
+}
+
+/// The Firewall tab's group, as values rather than views, so the rail can push one directly.
+enum FirewallRoute: Hashable {
+    case block
+    case ports
+    case allowlist
+}
+
+// MARK: - Opening the rail from anywhere
+
+/// Every screen's navigation bar carries the rail button, and no screen should have to be
+/// handed a closure through four initialisers to draw it. The action goes in the environment
+/// once, at the tab view, and `.consoleRailToolbar()` picks it up wherever it is applied.
+struct ConsoleRailAction {
+    let open: () -> Void
+    init(_ open: @escaping () -> Void = {}) { self.open = open }
+}
+
+private struct ConsoleRailKey: EnvironmentKey {
+    static let defaultValue = ConsoleRailAction()
+}
+
+extension EnvironmentValues {
+    var consoleRail: ConsoleRailAction {
+        get { self[ConsoleRailKey.self] }
+        set { self[ConsoleRailKey.self] = newValue }
+    }
+}
+
+/// The rail button, in the leading slot of a navigation bar — where the console keeps its
+/// rail, and where a phone's thumb expects a menu.
+struct ConsoleRailButton: View {
+    @Environment(\.consoleRail) private var rail
+
+    var body: some View {
+        Button(action: rail.open) {
+            Image(systemName: "sidebar.leading")
+                .font(.system(size: 15, weight: .semibold))
+        }
+        .accessibilityLabel("Console menu")
+    }
+}
+
+extension View {
+    /// Adds the rail button to this screen's navigation bar.
+    func consoleRailToolbar() -> some View {
+        toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                ConsoleRailButton()
+            }
         }
     }
 }

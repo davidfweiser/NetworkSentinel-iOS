@@ -82,6 +82,7 @@ struct HostsView: View {
             .nsSleepAware(model.isAsleep) { Task { await model.wakeConsole() } }
             .background { AmbientField() }
             .navigationTitle("Remote Computers")
+            .consoleRailToolbar()
             .navigationBarTitleDisplayMode(mode == nil ? .automatic : .inline)
             .searchable(text: $query, prompt: "IP, name, geo")
             .toolbar {

@@ -81,8 +81,22 @@ final class AppModel {
     private(set) var sleepingServerIds: Set<UUID> = []
     private static let sleepingKey = "networksentinel.sleepingServers"
 
-    /// Foreground poll while awake.
-    private let awakePollInterval: TimeInterval = 2.5
+    /// Foreground poll while awake — the console's **Page refresh speed**, which is a
+    /// per-client setting there (it lives in that browser's storage, not on the server) and
+    /// so is a per-device one here. Persisted: a phone on a metered connection should not
+    /// have to re-choose ten seconds every launch.
+    var awakePollInterval: TimeInterval = 2.5 {
+        didSet {
+            guard awakePollInterval != oldValue else { return }
+            UserDefaults.standard.set(awakePollInterval, forKey: Self.pollIntervalKey)
+            guard !isAsleep else { return }
+            pollInterval = awakePollInterval
+            if pollTask != nil { restartPolling() }
+        }
+    }
+    private static let pollIntervalKey = "networksentinel.pollInterval"
+    /// The four the console offers, and the only values the picker will write.
+    static let pollIntervalChoices: [TimeInterval] = [1, 2.5, 5, 10]
     /// Foreground poll while asleep. A sleeping server observes nothing, so there is no new
     /// data to draw — but the heartbeat has to stay, or a wake from the web console or
     /// another device would never reach this phone. Same 30s the web console drops to.
@@ -93,6 +107,13 @@ final class AppModel {
     init() {
         let stored = UserDefaults.standard.stringArray(forKey: Self.sleepingKey) ?? []
         sleepingServerIds = Set(stored.compactMap(UUID.init(uuidString:)))
+        // `object(forKey:)` rather than `double(forKey:)`: an unset key reads as 0, which
+        // would be a poll loop with no sleep in it at all.
+        if let saved = UserDefaults.standard.object(forKey: Self.pollIntervalKey) as? Double,
+           Self.pollIntervalChoices.contains(saved) {
+            awakePollInterval = saved
+            pollInterval = saved
+        }
     }
 
     // MARK: - Derived state for the UI
@@ -922,6 +943,11 @@ final class AppModel {
 
     func setHttpsEnabled(_ on: Bool) async { await setSetting("httpsEnabled", enabled: on) }
     func setHttpsRedirect(_ on: Bool) async { await setSetting("httpsRedirect", enabled: on) }
+    /// Web 0.7.6+. Drops the plain-HTTP listener entirely, so the master password can only
+    /// cross the wire encrypted. The server refuses this while HTTPS is off or its
+    /// certificate will not load — deliberately, so a bad certificate cannot lock the
+    /// console out — and the refusal is worth surfacing verbatim.
+    func setHttpsOnly(_ on: Bool) async { await setSetting("httpsOnly", enabled: on) }
     /// Passed through as typed. The server owns the rules — 1–65535, and never the port
     /// already serving this console — and its refusal says which one you broke.
     func setHttpsPort(_ port: String) async {
