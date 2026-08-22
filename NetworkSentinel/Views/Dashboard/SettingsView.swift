@@ -45,6 +45,7 @@ struct SettingsView: View {
                 monitoringGroup
                 intrusionGroup
                 dnsGroup
+                dnsFilterGroup
                 wireGuardGroup
                 suricataGroup
                 alertingGroup
@@ -411,6 +412,84 @@ struct SettingsView: View {
         )
     }
 
+    // MARK: - DNS filtering
+    //
+    // Web 0.7.15, and the only group on this page whose switch stops a connection from ever
+    // being attempted. Every other control here acts on a flow that already exists — and on a
+    // VPN gateway a client's forwarded traffic never becomes a tracked connection at all, so
+    // nothing else in this app can decide where a tunnel client goes. A resolver that refuses
+    // to answer can.
+
+    @ViewBuilder
+    private var dnsFilterGroup: some View {
+        let s = settings
+        let passwordSet = s?.dnsFilterPasswordSet ?? false
+        let rows: [SettingRowSpec?] = [
+            toggleRow(
+                "dnsFilterEnabled", "DNS filtering",
+                "Refuse known malware, phishing and tracking names at the resolver, before anything connects. This switches filtering, not the resolver — turning it off leaves DNS answering normally but unfiltered, so no client loses name resolution.",
+                status: s?.dnsFilterStatus, isOn: s?.dnsFilterEnabled
+            ) { await model.setDnsFilterEnabled($0) },
+
+            textRow(
+                "dnsFilterUrl", "Filtering resolver",
+                "Admin API of the filtering resolver on this node. The server's setup script fills this in; clear it to leave the switch unconfigured — and to take Blocked Sites off the menu with it.",
+                value: s?.dnsFilterUrl,
+                placeholder: "Not configured",
+                edit: TextSettingEdit(
+                    id: "dnsFilterUrl",
+                    title: "Filtering resolver",
+                    placeholder: "10.8.0.1:3000",
+                    message: "Address of the resolver's admin API — a host, a host:port, or a full URL. The server fills in the rest and refuses what it cannot use.",
+                    keyboard: .URL,
+                    apply: { await model.setDnsFilterUrl($0) }
+                )
+            ),
+
+            textRow(
+                "dnsFilterUsername", "Resolver user",
+                "Admin user for that API — “admin” for an AdGuard Home the setup script installed. Leave empty if the resolver needs no login.",
+                value: s?.dnsFilterUsername,
+                placeholder: "No login",
+                edit: TextSettingEdit(
+                    id: "dnsFilterUsername",
+                    title: "Resolver user",
+                    placeholder: "admin",
+                    message: "Admin user for the resolver's API. Empty means it needs no login at all.",
+                    apply: { await model.setDnsFilterUsername($0) }
+                )
+            ),
+
+            // The DuckDNS token's contract, for the same reason: the server never sends a
+            // stored password back, so the field cannot be pre-filled, and an empty save is
+            // how one is removed.
+            (s?.dnsFilterUrl != nil) ? row(
+                "dnsFilterPassword", "Resolver password",
+                passwordSet
+                    ? "Password for that user. One is saved — the server never sends it back, so the field always starts empty. Save an empty field to remove it."
+                    : "Password for that user. Stored owner-only on the server and never sent back to this phone. No password saved yet.",
+                control: AnyView(
+                    Button(passwordSet ? "Stored" : "Set") {
+                        textEditDraft = ""
+                        textEdit = TextSettingEdit(
+                            id: "dnsFilterPassword",
+                            title: "Resolver password",
+                            placeholder: "resolver admin password",
+                            message: "The server never sends a stored password back, so this always starts empty. Save an empty field to clear it.",
+                            apply: { await model.setDnsFilterPassword($0) }
+                        )
+                    }
+                    .buttonStyle(.console(.ghost, compact: true))
+                )
+            ) : nil
+        ]
+        group(
+            "DNS filtering",
+            note: "The only control in this app that can stop a connection before it is attempted. Everything else acts on a flow that already exists — and on a VPN gateway a client's forwarded traffic never becomes a tracked connection at all, so nothing else here can block where a client goes. Set up by the server's own setup-dns-filter.sh. A name-based block: a client that dials a hard-coded address never asks, so it is never refused.",
+            rows: rows
+        )
+    }
+
     // MARK: - VPN (WireGuard)
 
     @ViewBuilder
@@ -426,8 +505,8 @@ struct SettingsView: View {
 
             s?.wireGuardPeerMbPer10Min.map { mb in
                 row(
-                    "wireGuardPeerMbPer10Min", "Per-peer transfer alert (MB / 10 min)",
-                    "Alert when this much data is sent to a single peer within 10 minutes. Off is the default — a VPN user streaming video legitimately moves gigabytes. Forwarded tunnel traffic has no local socket, so this is the only place it is counted.",
+                    "wireGuardPeerMbPer10Min", "Per-peer transfer notice (MB / 10 min)",
+                    "Note it when this much data is sent to a single peer within 10 minutes. Recorded as an observation, not a threat — volume through a tunnel is the tunnel working, and a VPN user streaming video legitimately moves gigabytes. Off is the default. Forwarded tunnel traffic has no local socket, so this is the only place it is counted.",
                     control: AnyView(
                         ConsoleSelect(
                             options: Self.wireGuardChoices.contains(mb) ? Self.wireGuardChoices : [mb] + Self.wireGuardChoices,
@@ -1044,7 +1123,10 @@ struct SettingsView: View {
     /// sentence, in the server's own words — there is no separate field for it.
     private static func statusReadsAsProblem(_ status: String?, isOn: Bool) -> Bool {
         guard isOn, let status = status?.lowercased() else { return false }
+        // "unreachable" is 0.7.15's: filtering switched on at a resolver the server cannot
+        // reach is on-but-not-working, which is exactly what this colour is for.
         return status.contains("needs root")
+            || status.contains("unreachable")
             || status.contains("not running")
             || status.contains("unavailable")
             || status.contains("needs elevation")
@@ -1119,6 +1201,9 @@ struct SettingsView: View {
             "about help versions"
         ]
         if settings?.httpsOnly != nil { corpus.append("https only turn off plain http") }
+        if settings?.dnsFilterEnabled != nil {
+            corpus.append("dns filtering filtering resolver adguard resolver user resolver password blocked sites")
+        }
         return corpus
     }
 }

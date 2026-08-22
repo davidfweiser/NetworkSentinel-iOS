@@ -191,6 +191,38 @@ actor APIClient {
         return try decode(data)
     }
 
+    /// `GET /api/dns-blocked?limit=N` — the names the filtering resolver refused, web ≥ 0.7.15.
+    ///
+    /// Never part of the poll. AdGuard's query log is the heaviest document it serves and the
+    /// resolver behind it is what every tunnel client resolves through, so this is read when
+    /// the screen opens and when it is pulled, exactly as the web console reads it.
+    ///
+    /// Returns nil on 404: the server predates the route, which is not a failure to report but
+    /// how the app knows this console has no Blocked Sites page. A server that *has* the route
+    /// and cannot reach its resolver answers 200 with `ok: false` and a message saying why —
+    /// that one is shown, because it is the difference between "no such feature" and
+    /// "the resolver is down".
+    func fetchDnsBlocked(
+        baseURL: String,
+        token: String?,
+        limit: Int = 100
+    ) async throws -> DnsBlockedResponse? {
+        let url = try url(base: baseURL, path: "/api/dns-blocked?limit=\(limit)")
+        var req = request(url: url, method: "GET", token: token)
+        req.cachePolicy = .reloadIgnoringLocalCacheData
+
+        let (data, response) = try await session.data(for: req)
+        if let http = response as? HTTPURLResponse {
+            if http.statusCode == 401 {
+                let msg = (try? decoder.decode(AuthResponse.self, from: data))?.message
+                throw APIError.unauthorized(msg)
+            }
+            if http.statusCode == 404 { return nil }
+        }
+        try throwIfNeeded(response: response, data: data)
+        return try decode(data)
+    }
+
     /// POST `/api/action` — matches Network Sentinel web 0.3+ `ActionRequest`
     /// (`action`, `ip`, `value`, `name`, `kind`, `direction`), plus the 0.7+ config-rule
     /// fields (`label`, `ruleAction`, `protocol`, `ports`, `addresses`, `replace`) and the

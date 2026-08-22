@@ -358,6 +358,7 @@ struct MainTabView: View {
                             case .block: FirewallBlockView()
                             case .ports: OpenPortsView()
                             case .allowlist: AllowlistView()
+                            case .dnsBlocked: DnsBlockedView()
                             }
                         }
                 }
@@ -417,6 +418,7 @@ struct MainTabView: View {
             case .block: return .firewall
             case .ports: return .ports
             case .allowlist: return .allowlist
+            case .dnsBlocked: return .dnsBlocked
             case nil: return .firewallConfig
             }
         case 4: return .settings
@@ -448,6 +450,13 @@ struct MainTabView: View {
         case .allowlist:
             firewallPath = [.allowlist]
             tab = 3
+        case .dnsBlocked:
+            // A top-level entry in the console's rail, and a push on the Firewall tab here.
+            // Not a sheet like Help: this is a list you read, pull to re-read, and go back
+            // from — and the tab it sits under is already the one that answers "what is
+            // being blocked", which is the same question in a different layer.
+            firewallPath = [.dnsBlocked]
+            tab = 3
         case .settings:
             tab = 4
         case .help:
@@ -464,6 +473,9 @@ enum FirewallRoute: Hashable {
     case block
     case ports
     case allowlist
+    /// Web 0.7.15. Reached from the rail rather than from a row on Firewall Config: it is a
+    /// top-level entry in the console's own menu, not part of its firewall group.
+    case dnsBlocked
 }
 
 // MARK: - Opening the rail from anywhere
