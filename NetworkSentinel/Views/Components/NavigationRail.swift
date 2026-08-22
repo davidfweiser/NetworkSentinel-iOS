@@ -12,7 +12,9 @@ import SwiftUI
 ///
 /// So the rail comes over whole. It opens from every screen, it lists all ten entries in the
 /// console's order with the console's names, the two sub-entries are indented under their
-/// parent, and the checked one carries the same ringed dot. Underneath sits the rail's status
+/// parent, and the checked one carries the same ringed dot. Web 0.7.15 adds an eleventh,
+/// **Blocked Sites**, which the console shows only once a filtering resolver is configured —
+/// so this rail does too. Underneath sits the rail's status
 /// block: what the monitor is doing, whether the firewall can be written, and the one toggle
 /// that decides whether detections turn into kernel rules.
 ///
@@ -27,6 +29,8 @@ enum RailEntry: String, CaseIterable, Identifiable {
     case firewall
     case firewallConfig
     case allowlist
+    /// Web 0.7.15. Not always in the menu — see `NavigationRailView.entries`.
+    case dnsBlocked
     case settings
     case help
 
@@ -44,6 +48,7 @@ enum RailEntry: String, CaseIterable, Identifiable {
         case .firewall: return "Firewall & Block"
         case .firewallConfig: return "Firewall Config"
         case .allowlist: return "Allowlist"
+        case .dnsBlocked: return "Blocked Sites"
         case .settings: return "Settings"
         case .help: return "Help"
         }
@@ -63,6 +68,7 @@ enum RailEntry: String, CaseIterable, Identifiable {
         switch self {
         case .firewallConfig: return "Add, edit and delete inbound and outbound rules"
         case .allowlist: return "Domains and IPs that are never blocked"
+        case .dnsBlocked: return "Names the filtering resolver refused"
         default: return nil
         }
     }
@@ -77,6 +83,14 @@ struct NavigationRailView: View {
     let onSelect: (RailEntry) -> Void
 
     private var settings: SettingsInfo? { model.state?.settings }
+
+    /// The menu, for this server. Nine entries are always in it; **Blocked Sites** appears
+    /// only once a filtering resolver is configured, which is what the console does with its
+    /// own nav item — a list of refused names with no resolver behind it has nothing to say,
+    /// and every other entry in this rail leads somewhere on every server.
+    private var entries: [RailEntry] {
+        RailEntry.allCases.filter { $0 != .dnsBlocked || model.hasDnsFilter }
+    }
     private var monitoring: Bool {
         !model.isAsleep && (settings?.isMonitoring ?? model.state?.stats?.isMonitoring ?? false)
     }
@@ -94,7 +108,7 @@ struct NavigationRailView: View {
                         .padding(.leading, 8)
                         .padding(.bottom, 8)
 
-                    ForEach(RailEntry.allCases) { entry in
+                    ForEach(entries) { entry in
                         railButton(entry)
                     }
                 }
@@ -205,6 +219,9 @@ struct NavigationRailView: View {
         case .firewall: count = (state?.firewallRules ?? []).groupedByBlock().count
         case .firewallConfig: count = model.configRules.isEmpty ? nil : model.configRules.count
         case .allowlist: count = state?.allowlist?.count
+        // What the last read found. Nil until the screen has been opened once — the list is
+        // never fetched on the poll, so a zero here would mean "not read yet", not "none".
+        case .dnsBlocked: count = model.dnsBlocked.isEmpty ? nil : model.dnsBlocked.count
         default: count = nil
         }
         guard let count, count > 0 else { return nil }

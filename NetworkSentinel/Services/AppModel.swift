@@ -35,6 +35,24 @@ final class AppModel {
     /// Why the scan could not be read, kept apart from `lastError` so a slow `netsh` does not
     /// raise a banner over the whole app.
     var hostScanError: String?
+    /// The filtering resolver's refusals — `GET /api/dns-blocked`, read on demand. Kept here
+    /// rather than in the view so the rail's badge and the screen read the same list, and so
+    /// switching server clears it with everything else.
+    var dnsBlocked: [DnsBlockedEntry] = []
+    /// The server's own sentence about that read: how many, or why there are none. Shown
+    /// verbatim — "the query log is switched off in AdGuard" is a diagnosis the app cannot
+    /// make for itself.
+    var dnsBlockedMessage: String?
+    /// False when the server answered `ok: false` — a resolver that is unreachable, refusing
+    /// the credentials, or answering something unparseable.
+    var dnsBlockedOk = true
+    var dnsBlockedLoading = false
+    /// True once the route has answered 404: this console predates Blocked Sites.
+    var dnsBlockedUnsupported = false
+    /// How many refusals to ask for. The console offers exactly these four.
+    var dnsBlockedLimit = 100
+    static let dnsBlockedLimits = [50, 100, 250, 500]
+
     var isLoading = false
     var isRefreshing = false
     var lastError: String?
@@ -313,6 +331,12 @@ final class AppModel {
         hostScan = nil
         hostScanUnsupported = false
         hostScanError = nil
+        // Same reasoning for the resolver's refusals: they belong to one console's resolver,
+        // and `dnsBlockedUnsupported` carried across would hide the page on a server that has it.
+        dnsBlocked = []
+        dnsBlockedMessage = nil
+        dnsBlockedOk = true
+        dnsBlockedUnsupported = false
         guard let server else {
             authPhase = .checking
             needsAuth = false
@@ -910,6 +934,36 @@ final class AppModel {
         await setSetting("dnsApprovedResolvers", value: resolvers.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
+    // MARK: DNS filtering (web 0.7.15+)
+    //
+    // The switch stops a connection being attempted at all, which nothing else in this app
+    // does — so unlike every other toggle here, its failures matter. The server talks to the
+    // resolver synchronously and answers with what happened ("the resolver rejected the
+    // credentials", "no answer within 6s"), and `runAction` already surfaces that verbatim.
+
+    /// Filtering on or off *at the resolver*, not the resolver itself: stopping the service
+    /// would take name resolution away from every tunnel client at once, which is an outage
+    /// rather than "filtering off".
+    func setDnsFilterEnabled(_ on: Bool) async { await setSetting("dnsFilterEnabled", enabled: on) }
+
+    /// Admin API of the filtering resolver. The server normalises what a person would type —
+    /// `10.8.0.1`, `10.8.0.1:3000`, `http://10.8.0.1:3000/` — and refuses what it cannot use.
+    /// Empty clears it, which unconfigures the switch and takes Blocked Sites away with it.
+    func setDnsFilterUrl(_ url: String) async {
+        await setSetting("dnsFilterUrl", value: url.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// Empty means the resolver needs no login.
+    func setDnsFilterUsername(_ user: String) async {
+        await setSetting("dnsFilterUsername", value: user.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// Write-only, like the DuckDNS token: the server sends back only whether one is stored.
+    /// Empty removes it. Not trimmed — a password's leading space is part of the password.
+    func setDnsFilterPassword(_ password: String) async {
+        await setSetting("dnsFilterPassword", value: password)
+    }
+
     func setWireGuardMonitor(_ on: Bool) async { await setSetting("wireGuardMonitorEnabled", enabled: on) }
 
     /// Megabytes per peer per 10 minutes. 0 turns per-peer transfer alerts off, which is
@@ -1097,6 +1151,58 @@ final class AppModel {
         } catch {
             hostScanError = error.localizedDescription
         }
+    }
+
+    // MARK: Blocked Sites (web 0.7.15+)
+
+    /// Whether this console has a filtering resolver behind it, which is what decides
+    /// whether Blocked Sites is offered at all. The server publishes the answer rather than
+    /// the app inferring it from the URL field: a resolver address that fails to normalise
+    /// is stored as empty, and only the server knows that.
+    var hasDnsFilter: Bool { state?.settings?.dnsFilterConfigured == true }
+
+    /// Reads the refusals. Called when the screen appears, when the limit changes, and on
+    /// pull-to-refresh — never on the poll, because the resolver serving that log is what
+    /// every tunnel client resolves through.
+    ///
+    /// A server that answers `ok: false` has still answered: its message says whether the
+    /// resolver was unreachable, refused the credentials, or simply has an empty log. That
+    /// is kept and shown; only a 404 means the console has no such page.
+    func loadDnsBlocked() async {
+        guard let server, !dnsBlockedLoading else { return }
+        dnsBlockedLoading = true
+        defer { dnsBlockedLoading = false }
+        do {
+            let reply = try await api.fetchDnsBlocked(
+                baseURL: server.baseURL,
+                token: store.sessionToken(for: server.id),
+                limit: dnsBlockedLimit
+            )
+            guard let reply else {
+                dnsBlockedUnsupported = true
+                dnsBlocked = []
+                dnsBlockedMessage = nil
+                return
+            }
+            dnsBlockedUnsupported = false
+            dnsBlockedOk = reply.ok ?? false
+            dnsBlockedMessage = reply.message
+            dnsBlocked = reply.entries ?? []
+        } catch APIError.unauthorized {
+            // The poll owns re-authentication; this one only says it could not read.
+            dnsBlockedOk = false
+            dnsBlockedMessage = "Session expired — the resolver's log was not read."
+        } catch {
+            dnsBlockedOk = false
+            dnsBlockedMessage = error.localizedDescription
+        }
+    }
+
+    /// Changes how many refusals to ask for and re-reads. Same four the console offers.
+    func setDnsBlockedLimit(_ limit: Int) async {
+        guard limit != dnsBlockedLimit else { return }
+        dnsBlockedLimit = limit
+        await loadDnsBlocked()
     }
 
     /// Re-reads the scan after a write, but only for a server that serves it separately —

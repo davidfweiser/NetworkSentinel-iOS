@@ -111,6 +111,46 @@ struct HostFirewallScan: Codable {
     let listeners: [HostListener]?
 }
 
+// MARK: - Blocked Sites (web ≥ 0.7.15)
+
+/// `GET /api/dns-blocked?limit=N` — the names the filtering resolver refused.
+///
+/// Off the state poll on purpose, and the server says why: the query log is the busiest
+/// document AdGuard serves, and a console reading it every 2.5 seconds is a load on the
+/// resolver every tunnel client depends on for name resolution. So it is read when the
+/// screen is opened and when refresh is pulled, and not otherwise.
+///
+/// `ok` false is not an app error — an unreachable resolver, wrong credentials, or a query
+/// log switched off in AdGuard all come back this way with `message` saying which. The
+/// message is the screen's whole diagnosis and is shown verbatim.
+struct DnsBlockedResponse: Codable {
+    let ok: Bool?
+    let message: String?
+    let entries: [DnsBlockedEntry]?
+}
+
+/// One refused query: which name, from which client, why, and under which rule. The server
+/// reduces AdGuard's log entry to these five fields — everything else in it is answer
+/// plumbing that a person reading the list has no use for.
+struct DnsBlockedEntry: Codable, Identifiable {
+    /// The resolver's log has no id, and the same name blocked twice a second apart is two
+    /// rows that must not collapse into one — hence the whole shape, disambiguated by index
+    /// in `uniqued(by:)` the way the connection list is.
+    var id: String { "\(time ?? "")|\(domain ?? "")|\(client ?? "")|\(rule ?? "")" }
+    /// `HH:mm:ss` in the *server's* local time, already formatted — the phone must not
+    /// re-zone a string it did not parse.
+    let time: String?
+    let domain: String?
+    /// The tunnel address that asked. On a VPN gateway this is the only way to tell which
+    /// client a refusal belongs to.
+    let client: String?
+    /// Why, in words: Blocklist, Safe browsing, Parental, Blocked service, Safe search.
+    /// An unrecognised reason code is passed through by the server as itself.
+    let reason: String?
+    /// The filter rule that matched, verbatim.
+    let rule: String?
+}
+
 /// The host firewall as one reading — web ≥ 0.7.4.
 ///
 /// Before 0.7.4 the Firewall Config screen showed this app's ledger and nothing else, which
@@ -398,6 +438,34 @@ struct SettingsInfo: Codable {
     /// so it only counts as encrypted DNS when its destination is listed here.
     let dnsApprovedResolvers: String?
     let dnsHygieneStatus: String?
+
+    // MARK: DNS filtering (web ≥ 0.7.15)
+    //
+    // A different thing from the group above, which is why the console gave it its own.
+    // DNS hygiene *watches* queries; this *refuses* them, at a resolver the server drives
+    // over its admin API. It is the only control in the product that stops a connection
+    // before it is attempted — everything else acts on a flow that already exists, and on a
+    // VPN gateway a client's forwarded traffic never becomes a tracked connection at all.
+
+    /// Whether the resolver is filtering right now. Read back from the resolver on every
+    /// state build rather than mirrored from settings, so a switch touched in AdGuard's own
+    /// UI cannot leave this reading "on" while nothing is being filtered. `nil` on a server
+    /// that predates the feature; `false` also means "unreachable", and `dnsFilterStatus` is
+    /// the only field that tells those two apart.
+    let dnsFilterEnabled: Bool?
+    /// Whether a resolver address is set at all — the server's own probe for whether the
+    /// Blocked Sites page is worth offering. The console hides its nav entry on this, and so
+    /// does the rail: a blocked-name list with no resolver behind it has nothing to say.
+    let dnsFilterConfigured: Bool?
+    /// Admin API of the filtering resolver, e.g. `http://10.8.0.1:3000`. The setup script
+    /// fills it in; clearing it unconfigures the switch.
+    let dnsFilterUrl: String?
+    let dnsFilterUsername: String?
+    /// Whether a password is stored. The password itself is never sent to any client —
+    /// the same contract as the DuckDNS token.
+    let dnsFilterPasswordSet: Bool?
+    /// Filtering, unfiltered, or unreachable, in the server's own words.
+    let dnsFilterStatus: String?
     /// WireGuard peers, which no other part of the server can see — a tunnel is one
     /// unconnected UDP socket with no peer in the socket table.
     let wireGuardMonitorEnabled: Bool?

@@ -31,6 +31,7 @@
 		A15FD925902247360BE96367 /* CriticalAlertService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A66E61D71D3DDBB16A44B71D /* CriticalAlertService.swift */; };
 		B2EFB650A17035F086427BF2 /* HostsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0C41C43A94E5FC1124AC0D7 /* HostsView.swift */; };
 		C0B4BB70236EFE5EF2EBA0BD /* FirewallBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A131896A9336C386B13DBEE0 /* FirewallBlockView.swift */; };
+		C51067E93C59A184CCDE8963 /* DnsBlockedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9650CF31F4C59609692DE6AC /* DnsBlockedView.swift */; };
 		C6A4771FCAC18DF995E192B5 /* ServersListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AE7012AC9352A900E8DE772 /* ServersListView.swift */; };
 		D5F065FDE89B08E8665BAD85 /* NavigationRail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3631F2752EE5F25DCCED8FD4 /* NavigationRail.swift */; };
 		D8586D5CB6D5714865DCC0A1 /* TextSettingEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20AF2EAD58B8DDACB589719 /* TextSettingEditor.swift */; };
@@ -61,6 +62,7 @@
 		814350F5C5BE3F494DA1BFD7 /* ServerStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerStore.swift; sourceTree = "<group>"; };
 		938724AC8BCE8D274BEA33F4 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		9423F2F59A1F9BE8C016659C /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
+		9650CF31F4C59609692DE6AC /* DnsBlockedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DnsBlockedView.swift; sourceTree = "<group>"; };
 		A0C41C43A94E5FC1124AC0D7 /* HostsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostsView.swift; sourceTree = "<group>"; };
 		A131896A9336C386B13DBEE0 /* FirewallBlockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirewallBlockView.swift; sourceTree = "<group>"; };
 		A37A8B262875363A4DFBCE8A /* WireGuardPeersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WireGuardPeersView.swift; sourceTree = "<group>"; };
@@ -159,6 +161,7 @@
 			children = (
 				EF3437A8A628A01763AABAA8 /* ConnectionsView.swift */,
 				17DBFB1415E5E59D9E624758 /* DataFlowView.swift */,
+				9650CF31F4C59609692DE6AC /* DnsBlockedView.swift */,
 				A131896A9336C386B13DBEE0 /* FirewallBlockView.swift */,
 				48616706D712A2016FB31747 /* FirewallConfigView.swift */,
 				02F2CB746C8DEAAAF35C6A64 /* HelpView.swift */,
@@ -260,6 +263,7 @@
 				527988CAD3C34530A821C2D5 /* ConsoleKit.swift in Sources */,
 				A15FD925902247360BE96367 /* CriticalAlertService.swift in Sources */,
 				7C6DA2CCD1DEA6A218AB9CC2 /* DataFlowView.swift in Sources */,
+				C51067E93C59A184CCDE8963 /* DnsBlockedView.swift in Sources */,
 				C0B4BB70236EFE5EF2EBA0BD /* FirewallBlockView.swift in Sources */,
 				33C9EFCC44571BD6B15A3AD3 /* FirewallConfigView.swift in Sources */,
 				265852E8803044A6B8220657 /* HelpView.swift in Sources */,
@@ -320,7 +324,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 10;
+				CURRENT_PROJECT_VERSION = 11;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = R27KU7BQMW;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -344,7 +348,7 @@
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 1.4.0;
+				MARKETING_VERSION = 1.5.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -412,7 +416,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 10;
+				CURRENT_PROJECT_VERSION = 11;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = R27KU7BQMW;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -430,7 +434,7 @@
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 1.4.0;
+				MARKETING_VERSION = 1.5.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
