@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- No tracking: the app contacts only the Network Sentinel consoles the
+	     person adds by address. There is no analytics SDK, no advertising
+	     identifier, and no third-party endpoint, so there are no tracking
+	     domains to list. -->
+	<key>NSPrivacyTracking</key>
+	<false/>
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+
+	<!-- Nothing is collected. Server addresses and already-notified threat IDs
+	     stay in UserDefaults on the device; passwords and session tokens stay
+	     in the Keychain (kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly).
+	     None of it is transmitted to the developer or any third party, which is
+	     what "collected" means here — so this array is empty rather than
+	     listing data that never leaves the device. -->
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+
+	<!-- Required-reason APIs. UserDefaults is the only one this app touches:
+	     Services/ServerStore.swift persists the server list and selection, and
+	     Services/CriticalAlertService.swift remembers which threats have
+	     already raised a notification. Both read and write only this app's own
+	     defaults — no app group, no other app's data, no managed
+	     configuration — which is precisely what CA92.1 covers.
+
+	     Deliberately absent, because the app does not use them: file timestamp,
+	     system boot time, disk space and active keyboard. Keychain (SecItemAdd
+	     and friends, Services/KeychainStore.swift) is not a required-reason API
+	     and needs no declaration. -->
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>CA92.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

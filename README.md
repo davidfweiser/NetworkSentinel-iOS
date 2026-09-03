@@ -427,6 +427,12 @@ NetworkSentinel-iOS/
 - Server list is stored in `UserDefaults` on device only, alongside already-notified threat IDs so alerts are not repeated.
 - Passwords/session tokens live in the Keychain (`AfterFirstUnlockThisDeviceOnly`).
 - No analytics or third-party network calls from this app.
+- [`PrivacyInfo.xcprivacy`](NetworkSentinel/PrivacyInfo.xcprivacy) declares the
+  above to the App Store: no tracking, no tracking domains, no collected data
+  types, and `UserDefaults` (reason `CA92.1` — the app's own defaults only) as
+  the single required-reason API in use. App Store submission has required a
+  privacy manifest since May 2024, and it is read out of the built bundle, so
+  `project.yml` puts it in Copy Bundle Resources explicitly.
 
 ## License
 

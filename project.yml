@@ -27,6 +27,13 @@ targets:
           - "**/.DS_Store"
           # Referenced via CODE_SIGN_ENTITLEMENTS; must not be copied into the bundle.
           - "**/*.entitlements"
+          # Declared explicitly below so its build phase is stated rather than
+          # inferred from the extension; excluded here to avoid a second copy.
+          - "PrivacyInfo.xcprivacy"
+      # App Store submission reads this out of the bundle, so it has to land in
+      # Copy Bundle Resources — not merely exist in the repository.
+      - path: NetworkSentinel/PrivacyInfo.xcprivacy
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.davidfweiser.NetworkSentinel
