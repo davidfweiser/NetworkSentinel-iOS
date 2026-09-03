@@ -430,4 +430,16 @@ NetworkSentinel-iOS/
 
 ## License
 
-Matches the parent [NetworkSentinel](https://github.com/davidfweiser/NetworkSentinel) project.
+**MIT** — see [`LICENSE`](LICENSE), matching the parent
+[NetworkSentinel](https://github.com/davidfweiser/NetworkSentinel) project and
+the [macOS](https://github.com/davidfweiser/NetworkSentinel-mac) edition. Use
+it, fork it, ship it, sell it; keep the copyright notice with it and accept
+that it comes with no warranty.
+
+This app redistributes no third-party code — no Swift Package Manager
+dependencies, no vendored sources, no bundled fonts — so nothing but the MIT
+notice has to accompany a build.
+[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) records that, along with the
+Apple frameworks the app links against and where the provider names in the
+settings screens actually belong (they are server-side settings this app
+toggles remotely, not calls made from the device).
