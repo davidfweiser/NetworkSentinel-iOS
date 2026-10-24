@@ -29,6 +29,7 @@
 		8D6E9D9B1A16B3EF3F5A20BD /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6891AC5E17F1771098E55F03 /* Models.swift */; };
 		8F0BCC93C2D543FA2F5550A1 /* TrafficMeterCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8A16E9F38A956081953D91A /* TrafficMeterCard.swift */; };
 		A15FD925902247360BE96367 /* CriticalAlertService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A66E61D71D3DDBB16A44B71D /* CriticalAlertService.swift */; };
+		A9A04010B9A904C25F6BA27E /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = BE9FF45D6E641C8949916F53 /* PrivacyInfo.xcprivacy */; };
 		B2EFB650A17035F086427BF2 /* HostsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0C41C43A94E5FC1124AC0D7 /* HostsView.swift */; };
 		C0B4BB70236EFE5EF2EBA0BD /* FirewallBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A131896A9336C386B13DBEE0 /* FirewallBlockView.swift */; };
 		C51067E93C59A184CCDE8963 /* DnsBlockedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9650CF31F4C59609692DE6AC /* DnsBlockedView.swift */; };
@@ -68,6 +69,7 @@
 		A37A8B262875363A4DFBCE8A /* WireGuardPeersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WireGuardPeersView.swift; sourceTree = "<group>"; };
 		A66E61D71D3DDBB16A44B71D /* CriticalAlertService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CriticalAlertService.swift; sourceTree = "<group>"; };
 		BBA5D1340BDB96309E3FF80D /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		BE9FF45D6E641C8949916F53 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		C6EF72769ACEFB56906AE266 /* BackgroundRefresh.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundRefresh.swift; sourceTree = "<group>"; };
 		CB594FE9C08F6FEA200A0FDA /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		D20AF2EAD58B8DDACB589719 /* TextSettingEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextSettingEditor.swift; sourceTree = "<group>"; };
@@ -88,6 +90,7 @@
 				6EC7700CB2573BB4983BB1D8 /* Assets.xcassets */,
 				72A8AE9B93EB68653B7DB760 /* Info.plist */,
 				1F580F2DAB752302A83956B6 /* NetworkSentinelApp.swift */,
+				BE9FF45D6E641C8949916F53 /* PrivacyInfo.xcprivacy */,
 				D2FFB791D1583B17EE570607 /* Theme.swift */,
 			);
 			path = NetworkSentinel;
@@ -243,6 +246,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				F09ACF28E5EB6C6ED8B122A1 /* Assets.xcassets in Resources */,
+				A9A04010B9A904C25F6BA27E /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
