@@ -40,6 +40,10 @@ targets:
       path: NetworkSentinel/Info.plist
       properties:
         CFBundleDisplayName: Network Sentinel
+        # Without these, XcodeGen writes its default 1.0 (1) into the file, which
+        # then disagrees with MARKETING_VERSION and CURRENT_PROJECT_VERSION above.
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
