@@ -4,6 +4,27 @@ Modern iOS companion for **Network Sentinel** web servers (Linux, Windows & macO
 
 Connect to one or more hosts running the headless web UI (`-w` / `--web`), sign in with the master password, and monitor critical network state from your iPhone or iPad.
 
+## Screenshots
+
+<p>
+  <img src="docs/screenshots/iphone-dashboard.png" width="190" alt="Dashboard: a blocked Critical threat on the needs-attention card, live stats, the activity chart and data flow">
+  <img src="docs/screenshots/iphone-break-ins.png" width="190" alt="Break-in Attempts: each threat with its severity, detail, and whether its address is blocked">
+  <img src="docs/screenshots/iphone-firewall-config.png" width="190" alt="Firewall Config: the host firewall's backend, default policies and rules">
+  <img src="docs/screenshots/iphone-data-flow.png" width="190" alt="Data flow: live throughput, this month by day and the last twelve months">
+</p>
+<p>
+  <img src="docs/screenshots/iphone-live-connections.png" width="190" alt="Live Connections: every socket with its process, remote address and location">
+  <img src="docs/screenshots/iphone-blocked-sites.png" width="190" alt="Blocked Sites: names the filtering resolver refused, with the client and the rule that matched">
+  <img src="docs/screenshots/iphone-settings.png" width="190" alt="Settings: the intrusion-detection group of the console's own settings page">
+  <img src="docs/screenshots/iphone-console-menu.png" width="190" alt="The console's navigation rail, with its status block and the auto-block switch">
+</p>
+<p>
+  <img src="docs/screenshots/ipad-dashboard.png" width="395" alt="Dashboard on iPad">
+  <img src="docs/screenshots/ipad-firewall-config.png" width="395" alt="Firewall Config on iPad">
+</p>
+
+<sub>Captured against a stand-in console serving invented data — documentation-range addresses and `example.com` names, not a real network.</sub>
+
 ## Features
 
 | Area | What you get |
@@ -419,6 +440,8 @@ NetworkSentinel-iOS/
       Components/             # ConsoleKit (the console's shapes), NavigationRail, charts
       Servers/                # Onboarding, auth, server list
       Dashboard/              # Tabs & detail lists
+  docs/
+    screenshots/              # README images (invented data)
 ```
 
 ## Privacy
