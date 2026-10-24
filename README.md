@@ -382,13 +382,12 @@ Note the URL printed in the console, e.g. `http://192.168.1.10:18765`.
 
 ```bash
 cd NetworkSentinel-iOS
-xcodegen generate   # creates NetworkSentinel.xcodeproj
-open NetworkSentinel.xcodeproj
+open NetworkSentinel.xcodeproj   # committed; `xcodegen generate` rebuilds it from project.yml
 ```
 
 Select an iPhone simulator or device, then **Run** (⌘R).
 
-If you use a physical device, set your **Development Team** in the Xcode project’s Signing settings.
+The project is signed with the maintainer's team. To run on a physical device, set your own **Development Team** (and, if needed, a bundle identifier of your own) in the Xcode project’s Signing settings.
 
 ### Transport security
 
@@ -427,7 +426,24 @@ NetworkSentinel-iOS/
 - Server list is stored in `UserDefaults` on device only, alongside already-notified threat IDs so alerts are not repeated.
 - Passwords/session tokens live in the Keychain (`AfterFirstUnlockThisDeviceOnly`).
 - No analytics or third-party network calls from this app.
+- [`PrivacyInfo.xcprivacy`](NetworkSentinel/PrivacyInfo.xcprivacy) declares the
+  above to the App Store: no tracking, no tracking domains, no collected data
+  types, and `UserDefaults` (reason `CA92.1` — the app's own defaults only) as
+  the single required-reason API in use. App Store submission has required a
+  privacy manifest since May 2024, and it is read out of the built bundle, so
+  `project.yml` puts it in Copy Bundle Resources explicitly.
 
 ## License
 
-Matches the parent [NetworkSentinel](https://github.com/davidfweiser/NetworkSentinel) project.
+**MIT** — see [`LICENSE`](LICENSE), matching the parent
+[NetworkSentinel](https://github.com/davidfweiser/NetworkSentinel) project. Use
+it, fork it, ship it, sell it; keep the copyright notice with it and accept
+that it comes with no warranty.
+
+This app redistributes no third-party code — no Swift Package Manager
+dependencies, no vendored sources, no bundled fonts — so nothing but the MIT
+notice has to accompany a build.
+[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) records that, along with the
+Apple frameworks the app links against and where the provider names in the
+settings screens actually belong (they are server-side settings this app
+toggles remotely, not calls made from the device).
