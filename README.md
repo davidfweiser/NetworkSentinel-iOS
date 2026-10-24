@@ -382,13 +382,12 @@ Note the URL printed in the console, e.g. `http://192.168.1.10:18765`.
 
 ```bash
 cd NetworkSentinel-iOS
-xcodegen generate   # creates NetworkSentinel.xcodeproj
-open NetworkSentinel.xcodeproj
+open NetworkSentinel.xcodeproj   # committed; `xcodegen generate` rebuilds it from project.yml
 ```
 
 Select an iPhone simulator or device, then **Run** (⌘R).
 
-If you use a physical device, set your **Development Team** in the Xcode project’s Signing settings.
+The project is signed with the maintainer's team. To run on a physical device, set your own **Development Team** (and, if needed, a bundle identifier of your own) in the Xcode project’s Signing settings.
 
 ### Transport security
 
@@ -437,8 +436,7 @@ NetworkSentinel-iOS/
 ## License
 
 **MIT** — see [`LICENSE`](LICENSE), matching the parent
-[NetworkSentinel](https://github.com/davidfweiser/NetworkSentinel) project and
-the [macOS](https://github.com/davidfweiser/NetworkSentinel-mac) edition. Use
+[NetworkSentinel](https://github.com/davidfweiser/NetworkSentinel) project. Use
 it, fork it, ship it, sell it; keep the copyright notice with it and accept
 that it comes with no warranty.
 

@@ -36,10 +36,9 @@ Several settings screens name outside providers — ipwho.is and ipapi.co for
 geolocation, FireHOL level1 and Spamhaus DROP for threat intel, ntfy/Slack/
 Discord for webhooks. Those are **server-side** settings this app toggles
 remotely over the console API; the requests are made by the server, under the
-terms that server accepted, and are documented in the notices file of the
-edition running there ([Linux](https://github.com/davidfweiser/NetworkSentinel),
-[macOS](https://github.com/davidfweiser/NetworkSentinel-mac)). Nothing in this
-list is reached from the device.
+terms that server accepted, and belong to the server's own project
+([NetworkSentinel](https://github.com/davidfweiser/NetworkSentinel)). Nothing
+in this list is reached from the device.
 
 ---
 
