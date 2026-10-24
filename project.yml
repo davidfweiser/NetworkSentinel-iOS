@@ -63,3 +63,7 @@ targets:
           - processing
         BGTaskSchedulerPermittedIdentifiers:
           - com.davidfweiser.NetworkSentinel.refresh
+        # Export compliance, answered in the binary so TestFlight stops holding every
+        # build at "Missing Compliance". The app's only encryption is what iOS itself
+        # provides — HTTPS through URLSession and the Keychain — which is exempt.
+        ITSAppUsesNonExemptEncryption: false
