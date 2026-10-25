@@ -1008,6 +1008,13 @@ final class AppModel {
         await setSetting("httpsPort", value: port.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
+    /// Web 0.7.22+. Passed through as typed: the server strips a scheme, port or path down to
+    /// the bare name and refuses what is left if it is not one. Empty clears it, and the
+    /// console goes back to being named by its DuckDNS hostname.
+    func setPublicHostname(_ name: String) async {
+        await setSetting("publicHostname", value: name.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
     /// The server checks the file exists and tries to load the pair, so its reply is worth
     /// surfacing verbatim — a path that only fails at restart means no console at all.
     func setTlsCertPath(_ path: String) async {
