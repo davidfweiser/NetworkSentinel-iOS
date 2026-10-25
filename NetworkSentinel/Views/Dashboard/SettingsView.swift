@@ -710,9 +710,24 @@ struct SettingsView: View {
                 )
             },
 
+            // Web 0.7.22. Absent on an older server, and the row is simply not drawn there.
+            textRow(
+                "publicHostname", "Public hostname",
+                "The name this console is reached by from outside — the name your certificate covers. Set it when the name is your own; leave it empty to use the DuckDNS name below. Cosmetic only: it names the console in status lines and is never matched against incoming requests.",
+                value: s?.publicHostname,
+                edit: TextSettingEdit(
+                    id: "publicHostname",
+                    title: "Public hostname",
+                    placeholder: "sentinel.example.com",
+                    message: "The bare name, e.g. sentinel.example.com. Leave it empty to use the DuckDNS name.",
+                    keyboard: .URL,
+                    apply: { await model.setPublicHostname($0) }
+                )
+            ),
+
             (s?.duckDnsEnabled != nil) ? row(
                 "issueCert", "Issue certificate",
-                "Get a free trusted Let's Encrypt certificate for the DuckDNS name below and fill in the two paths. Proves control through the saved token, so nothing needs to be reachable on port 80. Takes a few minutes waiting on DNS.",
+                "DuckDNS route only: gets a free trusted Let's Encrypt certificate for the DuckDNS name below and fills in the two path fields. With your own domain, issue a certificate however you normally do and fill those paths in yourself. Proves control through the saved token, so nothing needs to be reachable on port 80. Takes a few minutes waiting on DNS.",
                 status: s?.certIssueMessage,
                 statusIsWarning: (s?.certIssueMessage?.isEmpty == false) && !(s?.certIssueOk ?? false),
                 control: AnyView(
@@ -824,18 +839,23 @@ struct SettingsView: View {
         group(
             "Remote access",
             note: remoteAccessNote,
+            // 0.7.22's, and drawn only where the server has the hostname row it points to.
+            secondNote: (s?.publicHostname != nil)
+                ? "DuckDNS is only one way to get a name. If you already own a domain, point a record at this machine, use any certificate you like for it, and leave the DuckDNS rows empty."
+                : nil,
             rows: rows,
             footer: "Exposing this console to the internet gives anyone who guesses the master password control of this machine's firewall. Prefer a VPN or Tailscale; if you do forward a port, forward only the HTTPS one and use a long unique password."
         )
     }
 
     private var remoteAccessNote: String? {
-        let https = settings?.httpsStatus ?? ""
-        let duck = settings?.duckDnsStatus ?? ""
-        if https.isEmpty && duck.isEmpty { return nil }
-        if https.isEmpty { return duck }
-        if duck.isEmpty { return https }
-        return "\(https) · \(duck)"
+        let url = settings?.consoleUrl ?? ""
+        let parts = [
+            settings?.httpsStatus ?? "",
+            settings?.duckDnsStatus ?? "",
+            url.isEmpty ? "" : "Console URL: \(url)"
+        ].filter { !$0.isEmpty }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     // MARK: - Auto-block
@@ -1138,6 +1158,7 @@ struct SettingsView: View {
     private func group(
         _ title: String,
         note: String? = nil,
+        secondNote: String? = nil,
         rows: [SettingRowSpec?],
         footer: String? = nil
     ) -> some View {
@@ -1148,6 +1169,9 @@ struct SettingsView: View {
                 // filtering — a search result is a row, not a lecture.
                 if let note, !note.isEmpty, query.isEmpty {
                     ConsoleNote(text: note)
+                }
+                if let secondNote, !secondNote.isEmpty, query.isEmpty {
+                    ConsoleNote(text: secondNote)
                 }
                 ForEach(visible) { spec in
                     ConsoleSettingRow(
@@ -1194,7 +1218,7 @@ struct SettingsView: View {
             "vpn wireguard peer monitoring per-peer transfer peers",
             "signatures suricata eve json path maximum severity muted signature ids",
             "alerting webhook url critical alerts on this device notification permission",
-            "remote access https port issue certificate private key redirect duckdns dynamic dns subdomain token",
+            "remote access https port public hostname console url own domain issue certificate private key redirect duckdns dynamic dns subdomain token",
             "auto-block threats dry run minimum severity block inbound outbound expiry",
             "allowlist remote feed refresh now",
             "danger zone remove all firewall rules",

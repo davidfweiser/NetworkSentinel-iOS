@@ -500,6 +500,13 @@ struct SettingsInfo: Codable {
     /// is why the row is drawn only when the field arrives rather than defaulted to off.
     let httpsOnly: Bool?
     let httpsStatus: String?
+    /// Web ≥ 0.7.22 — the name the console is reached by from outside, the one its certificate
+    /// covers, for a domain of the owner's own. Empty falls back to the DuckDNS name. Cosmetic
+    /// on the server: it names the console in status lines and is never matched to a request.
+    let publicHostname: String?
+    /// Web ≥ 0.7.22 — `https://name:port/` from that hostname or else the DuckDNS one, and
+    /// empty while HTTPS is off or no name is configured.
+    let consoleUrl: String?
     let tlsCertPath: String?
     let tlsKeyPath: String?
     let duckDnsEnabled: Bool?
