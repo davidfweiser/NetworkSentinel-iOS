@@ -4,6 +4,8 @@ Modern iOS companion for **Network Sentinel** web servers (Linux, Windows & macO
 
 Connect to one or more hosts running the headless web UI (`-w` / `--web`), sign in with the master password, and monitor critical network state from your iPhone or iPad.
 
+> **A companion app, not a requirement.** This app is an optional remote for [Network Sentinel](https://github.com/davidfweiser/NetworkSentinel), and Network Sentinel does not need it to operate. The monitoring, detection and blocking all run on the host itself, and its desktop GUI, terminal UI and browser console each work without this app. What the app adds is that console on your phone, and Critical alerts that reach you when you are away from it.
+
 ## Screenshots
 
 <p>
